@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "massive-options": {
+      "command": "node",
+      "args": ["/Users/abhisonu/Projects/untitled folder 2/massive-options-mcp/src/index.js"],
+      "env": {
+        "MASSIVE_API_KEY": "4OXqnQ4mVHz2R_jtH9UdNppTiAOCsq16"
+      }
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-http", "https://mcp.context7.com/mcp"],
+      "env": {
+        "HEADER_CONTEXT7_API_KEY": "ctx7sk-86791035-2257-40d8-a050-18ce7b5e14b8"
+      }
+    }
+  }
+}

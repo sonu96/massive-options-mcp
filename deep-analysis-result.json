@@ -1,0 +1,357 @@
+{
+  "symbol": "IBIT",
+  "analysis_time": "2025-11-04T02:32:21.034Z",
+  "account_size": 4000,
+  "risk_configuration": {
+    "max_risk_pct": 0.02,
+    "min_reward_ratio": 2,
+    "min_prob_profit": 0.5,
+    "max_concentration": 0.4,
+    "contract_multiplier": 100
+  },
+  "snapshot": {
+    "underlying_price": 60.53,
+    "total_contracts": 10,
+    "expirations_available": [
+      "2025-11-07"
+    ],
+    "put_call_ratio": 0
+  },
+  "unusual_activity": [],
+  "institutional_magnets": [
+    {
+      "expiration": "2026-01-16",
+      "strike": 5,
+      "type": "resistance",
+      "open_interest": 22408,
+      "strength": 55.29
+    },
+    {
+      "expiration": "2026-01-16",
+      "strike": 1,
+      "type": "resistance",
+      "open_interest": 16542,
+      "strength": 40.82
+    },
+    {
+      "expiration": "2026-01-16",
+      "strike": 10,
+      "type": "resistance",
+      "open_interest": 601,
+      "strength": 1.48
+    },
+    {
+      "expiration": "2026-03-20",
+      "strike": 5,
+      "type": "resistance",
+      "open_interest": 11280,
+      "strength": 90.28
+    },
+    {
+      "expiration": "2026-03-20",
+      "strike": 30,
+      "type": "resistance",
+      "open_interest": 538,
+      "strength": 4.31
+    },
+    {
+      "expiration": "2026-03-20",
+      "strike": 25,
+      "type": "resistance",
+      "open_interest": 235,
+      "strength": 1.88
+    }
+  ],
+  "volatility_analysis": {
+    "2026-01-16": {
+      "smile": {
+        "atmIV": 2.1374,
+        "atmStrike": 60.53,
+        "skew": {
+          "delta25": 0,
+          "delta10": 0
+        },
+        "smileSteepness": 21.1936,
+        "pattern": "smirk",
+        "interpretation": "OTM puts have higher IV - indicating downside protection demand. Steep smile indicates high demand for OTM options"
+      },
+      "put_call_ratios": {
+        "volume": {
+          "ratio": 0,
+          "callVolume": 361,
+          "putVolume": 0,
+          "interpretation": "Bullish sentiment - high call buying"
+        },
+        "openInterest": {
+          "ratio": 0,
+          "callOI": 40526,
+          "putOI": 0,
+          "interpretation": "Bullish positioning - high call open interest"
+        },
+        "premium": {
+          "ratio": 0,
+          "callPremium": 21298.57,
+          "putPremium": 0,
+          "interpretation": "Premium flowing into calls - aggressive positioning"
+        }
+      },
+      "gamma_exposure": {
+        "totalGEX": 17950.76,
+        "callGEX": 17950.76,
+        "putGEX": 0,
+        "regime": "Negative Gamma",
+        "maxGammaStrike": 5,
+        "zeroGammaStrike": 8,
+        "gammaProfile": [
+          {
+            "strike": 1,
+            "netGamma": 2131.99
+          },
+          {
+            "strike": 2,
+            "netGamma": 79.09
+          },
+          {
+            "strike": 3,
+            "netGamma": 42.26
+          },
+          {
+            "strike": 4,
+            "netGamma": 145.95
+          },
+          {
+            "strike": 5,
+            "netGamma": 14488.41
+          },
+          {
+            "strike": 6,
+            "netGamma": 12.23
+          },
+          {
+            "strike": 7,
+            "netGamma": 156.5
+          },
+          {
+            "strike": 8,
+            "netGamma": 6.34
+          },
+          {
+            "strike": 9,
+            "netGamma": 14.2
+          },
+          {
+            "strike": 10,
+            "netGamma": 873.79
+          }
+        ],
+        "interpretation": "Dealers are short gamma - expect higher volatility and trending moves. Key gamma level at 5 likely to act as magnet"
+      },
+      "max_pain": {
+        "maxPainStrike": 1,
+        "currentSpot": 60.53,
+        "percentFromSpot": -98.35,
+        "totalPainAtMax": 0,
+        "painDistribution": [
+          {
+            "strike": 1,
+            "pain": 0,
+            "percentFromMax": 0
+          }
+        ],
+        "interpretation": "Max pain significantly below spot - potential downward pressure"
+      },
+      "oi_distribution": {
+        "callWalls": [
+          {
+            "strike": 5,
+            "openInterest": 22408,
+            "percentOfTotal": 55.29
+          },
+          {
+            "strike": 1,
+            "openInterest": 16542,
+            "percentOfTotal": 40.82
+          },
+          {
+            "strike": 10,
+            "openInterest": 601,
+            "percentOfTotal": 1.48
+          },
+          {
+            "strike": 2,
+            "openInterest": 326,
+            "percentOfTotal": 0.8
+          },
+          {
+            "strike": 4,
+            "openInterest": 309,
+            "percentOfTotal": 0.76
+          }
+        ],
+        "putWalls": [],
+        "nearestResistance": null,
+        "nearestSupport": null,
+        "expectedRange": {
+          "low": null,
+          "high": null,
+          "width": 0
+        },
+        "interpretation": "No significant OI concentrations found"
+      }
+    },
+    "2026-03-20": {
+      "smile": {
+        "atmIV": 0.7196,
+        "atmStrike": 60.53,
+        "skew": {
+          "delta25": 0,
+          "delta10": 0
+        },
+        "smileSteepness": 2.5714,
+        "pattern": "smirk",
+        "interpretation": "OTM puts have higher IV - indicating downside protection demand. Steep smile indicates high demand for OTM options"
+      },
+      "put_call_ratios": {
+        "volume": {
+          "ratio": 0,
+          "callVolume": 387,
+          "putVolume": 0,
+          "interpretation": "Bullish sentiment - high call buying"
+        },
+        "openInterest": {
+          "ratio": 0,
+          "callOI": 12495,
+          "putOI": 0,
+          "interpretation": "Bullish positioning - high call open interest"
+        },
+        "premium": {
+          "ratio": 0,
+          "callPremium": 16365.86,
+          "putPremium": 0,
+          "interpretation": "Premium flowing into calls - aggressive positioning"
+        }
+      },
+      "gamma_exposure": {
+        "totalGEX": 19722.66,
+        "callGEX": 19722.66,
+        "putGEX": 0,
+        "regime": "Negative Gamma",
+        "maxGammaStrike": 5,
+        "zeroGammaStrike": 34,
+        "gammaProfile": [
+          {
+            "strike": 5,
+            "netGamma": 8271.26
+          },
+          {
+            "strike": 10,
+            "netGamma": 103.49
+          },
+          {
+            "strike": 15,
+            "netGamma": 54.63
+          },
+          {
+            "strike": 20,
+            "netGamma": 625.97
+          },
+          {
+            "strike": 25,
+            "netGamma": 1708.99
+          },
+          {
+            "strike": 30,
+            "netGamma": 6118.16
+          },
+          {
+            "strike": 31,
+            "netGamma": 2506.44
+          },
+          {
+            "strike": 32,
+            "netGamma": 121.74
+          },
+          {
+            "strike": 33,
+            "netGamma": 195.73
+          },
+          {
+            "strike": 34,
+            "netGamma": 16.26
+          }
+        ],
+        "interpretation": "Dealers are short gamma - expect higher volatility and trending moves. Key gamma level at 5 likely to act as magnet"
+      },
+      "max_pain": {
+        "maxPainStrike": 5,
+        "currentSpot": 60.53,
+        "percentFromSpot": -91.74,
+        "totalPainAtMax": 0,
+        "painDistribution": [
+          {
+            "strike": 5,
+            "pain": 0,
+            "percentFromMax": 0
+          }
+        ],
+        "interpretation": "Max pain significantly below spot - potential downward pressure"
+      },
+      "oi_distribution": {
+        "callWalls": [
+          {
+            "strike": 5,
+            "openInterest": 11280,
+            "percentOfTotal": 90.28
+          },
+          {
+            "strike": 30,
+            "openInterest": 538,
+            "percentOfTotal": 4.31
+          },
+          {
+            "strike": 25,
+            "openInterest": 235,
+            "percentOfTotal": 1.88
+          },
+          {
+            "strike": 31,
+            "openInterest": 202,
+            "percentOfTotal": 1.62
+          },
+          {
+            "strike": 20,
+            "openInterest": 132,
+            "percentOfTotal": 1.06
+          }
+        ],
+        "putWalls": [],
+        "nearestResistance": null,
+        "nearestSupport": null,
+        "expectedRange": {
+          "low": null,
+          "high": null,
+          "width": 0
+        },
+        "interpretation": "No significant OI concentrations found"
+      }
+    }
+  },
+  "recommended_strategies": [],
+  "allocation_report": null,
+  "portfolio_pnl": null,
+  "executive_summary": {
+    "total_strategies_analyzed": 0,
+    "strategies_recommended": 0,
+    "total_capital_required": 0,
+    "total_risk": 0,
+    "potential_profit": 0,
+    "portfolio_reward_ratio": 0,
+    "unusual_activity_detected": 0,
+    "key_support_levels": [],
+    "key_resistance_levels": [
+      5,
+      1,
+      10
+    ]
+  }
+}

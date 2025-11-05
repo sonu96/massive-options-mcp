@@ -1,0 +1,273 @@
+{
+  "symbol": "IBIT",
+  "current_price": 60.53,
+  "analysis_time": "2025-11-04T03:05:39.923Z",
+  "expirations": [
+    "2025-11-07",
+    "2025-11-14",
+    "2025-11-21",
+    "2025-11-28"
+  ],
+  "strike_range": {
+    "min": 49,
+    "max": 63,
+    "count": 20
+  },
+  "gex_matrix": {
+    "2025-11-07": {
+      "49": 26949.608575411392,
+      "50": 634773.6016209533,
+      "51": 459090.96951816895,
+      "52": 850170.4632392387,
+      "53": -5173665.22569027,
+      "54": 1621889.375793611,
+      "55": 3726765.793715221,
+      "56": 10055696.29991193,
+      "57": 8038283.52051086,
+      "58": 8399686.501110615,
+      "59": 12789654.948309397,
+      "60": 23377154.1526379,
+      "61": 18621387.762707025,
+      "62": -32146088.380028535,
+      "63": -27352250.8267825,
+      "58.5": 6617775.924184675,
+      "59.5": 7113187.266457645,
+      "60.5": 10534337.052368294,
+      "61.5": 28794748.56608898,
+      "62.5": -24037866.855083182
+    },
+    "2025-11-14": {
+      "49": 2394.68335991012,
+      "50": 370253.43005778117,
+      "51": 17826.803711228673,
+      "52": 51650.853469192254,
+      "53": 55576.204106348596,
+      "54": 192128.5389755083,
+      "55": 1311448.7331980516,
+      "56": 1228820.2379104234,
+      "57": 3714897.754092043,
+      "58": -847795.3889562248,
+      "59": 241039.43842910684,
+      "60": 4955438.3695528135,
+      "61": 38604724.63212763,
+      "62": 17660323.171175227,
+      "63": -6338570.146525829,
+      "58.5": 3046299.894317104,
+      "59.5": 740267.5992859061,
+      "60.5": 2257021.294514946,
+      "61.5": 268166.09050236456,
+      "62.5": -197289.37670896214
+    },
+    "2025-11-21": {
+      "49": 2149025.1098639076,
+      "50": 5990985.605038118,
+      "51": 1177520.943347751,
+      "52": 1216141.9174443812,
+      "53": 1501817.0694681387,
+      "54": 721183.0938797563,
+      "55": 5458978.960345358,
+      "56": 7072179.427831223,
+      "57": 7368485.227623818,
+      "58": 11957166.601558788,
+      "59": 1694051.928915567,
+      "60": 27831583.19442327,
+      "61": 6396892.177059299,
+      "62": 4266236.231601503,
+      "63": 7172813.70988863,
+      "58.5": 2391288.9034793675,
+      "59.5": 3197206.4411999453,
+      "60.5": 4021359.000780011,
+      "61.5": 1400311.2639728752,
+      "62.5": -51623.270941661845
+    },
+    "2025-11-28": {
+      "49": 508347.8230382302,
+      "50": 168599.10150060637,
+      "51": 249853.05138509878,
+      "52": 204579.16641414422,
+      "53": 440686.2239771185,
+      "54": 1667746.1013766972,
+      "55": 1251602.838765736,
+      "56": 7174030.181903126,
+      "57": 3055221.2358834078,
+      "58": 1433275.443330552,
+      "59": 2766589.5509907464,
+      "60": 5503189.863430714,
+      "61": 2187325.520693312,
+      "62": 2194246.8521937425,
+      "63": 12595537.60100715
+    }
+  },
+  "key_levels": {
+    "max_positive_gex": {
+      "strike": 61,
+      "expiration": "2025-11-14",
+      "value": 38604724.63,
+      "interpretation": "Strong magnet level at $61 - dealers will suppress volatility and push price toward this strike"
+    },
+    "max_negative_gex": {
+      "strike": 62,
+      "expiration": "2025-11-07",
+      "value": -32146088.38,
+      "interpretation": "Danger zone at $62 - break through this level triggers dealer hedging that amplifies the move"
+    },
+    "zero_gamma_strike": 51,
+    "total_gex": 264620737.43,
+    "regime": "Positive Gamma - Dealers long gamma, will dampen volatility"
+  },
+  "expiration_summary": {
+    "2025-11-07": {
+      "totalGEX": 52951680.52,
+      "callGEX": -175413011.34,
+      "putGEX": 228364691.86,
+      "regime": "Positive",
+      "interpretation": "Dealers long gamma - expect range-bound price action and volatility suppression"
+    },
+    "2025-11-14": {
+      "totalGEX": 67334622.82,
+      "callGEX": -48494617.53,
+      "putGEX": 115829240.35,
+      "regime": "Positive",
+      "interpretation": "Dealers long gamma - expect range-bound price action and volatility suppression"
+    },
+    "2025-11-21": {
+      "totalGEX": 102933603.54,
+      "callGEX": -301466175.45,
+      "putGEX": 404399778.99,
+      "regime": "Positive",
+      "interpretation": "Dealers long gamma - expect range-bound price action and volatility suppression"
+    },
+    "2025-11-28": {
+      "totalGEX": 41400830.56,
+      "callGEX": -17889646.46,
+      "putGEX": 59290477.01,
+      "regime": "Positive",
+      "interpretation": "Dealers long gamma - expect range-bound price action and volatility suppression"
+    }
+  },
+  "trading_implications": {
+    "support_levels": [
+      53
+    ],
+    "resistance_levels": [
+      61,
+      61.5,
+      61
+    ],
+    "magnet_levels": [
+      61,
+      61.5,
+      60
+    ],
+    "gamma_regime": "Positive Gamma - Dealers long gamma, will dampen volatility",
+    "zero_gamma_strike": 51,
+    "expected_range": {
+      "low": 53,
+      "high": 61,
+      "current": 60.53
+    },
+    "gamma_squeeze_risk": "HIGH - Price very close to large negative GEX zone",
+    "strategy_recommendations": [
+      {
+        "type": "Premium Selling",
+        "reason": "High positive GEX suggests range-bound action",
+        "strategies": [
+          "Iron Condor",
+          "Credit Spreads",
+          "Covered Calls"
+        ]
+      },
+      {
+        "type": "Mean Reversion",
+        "reason": "Strong magnet at 61",
+        "strategies": [
+          "Sell premium around magnet levels",
+          "Calendar spreads"
+        ]
+      }
+    ],
+    "volatility_outlook": "SUPPRESSED - Dealers hedging dampens moves"
+  },
+  "gex_by_strike": [
+    {
+      "strike": 61,
+      "gex": 65810330.09
+    },
+    {
+      "strike": 60,
+      "gex": 61667365.58
+    },
+    {
+      "strike": 61.5,
+      "gex": 30463225.92
+    },
+    {
+      "strike": 56,
+      "gex": 25530726.15
+    },
+    {
+      "strike": 57,
+      "gex": 22176887.74
+    },
+    {
+      "strike": 58,
+      "gex": 20942333.16
+    },
+    {
+      "strike": 59,
+      "gex": 17491335.87
+    },
+    {
+      "strike": 60.5,
+      "gex": 16812717.35
+    },
+    {
+      "strike": 58.5,
+      "gex": 12055364.72
+    },
+    {
+      "strike": 55,
+      "gex": 11748796.33
+    },
+    {
+      "strike": 59.5,
+      "gex": 11050661.31
+    },
+    {
+      "strike": 50,
+      "gex": 7164611.74
+    },
+    {
+      "strike": 54,
+      "gex": 4202947.11
+    },
+    {
+      "strike": 49,
+      "gex": 2686717.22
+    },
+    {
+      "strike": 52,
+      "gex": 2322542.4
+    },
+    {
+      "strike": 51,
+      "gex": 1904291.77
+    },
+    {
+      "strike": 53,
+      "gex": -3175585.73
+    },
+    {
+      "strike": 62,
+      "gex": -8025282.13
+    },
+    {
+      "strike": 63,
+      "gex": -13922469.66
+    },
+    {
+      "strike": 62.5,
+      "gex": -24286779.5
+    }
+  ]
+}
