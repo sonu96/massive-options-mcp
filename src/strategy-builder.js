@@ -54,18 +54,11 @@ export function generateBullCallSpreads(callOptions, underlyingPrice, targetStri
         const shortLeg = validCalls[j];
         const strikeSpread = shortLeg.strike - longLeg.strike;
 
-        // Adaptive spread width based on underlying price
-        // Low-priced stocks ($10-$100): Use percentage (5-25%)
-        // High-priced stocks ($100+): Use absolute dollar amount ($5-$50)
-        if (underlyingPrice < 100) {
-          const spreadPct = strikeSpread / longLeg.strike;
-          if (spreadPct < 0.05) continue;  // Min 5% for cheap stocks
-          if (spreadPct > 0.25) break;     // Max 25% for cheap stocks
-        } else {
-          // For expensive stocks, use absolute dollar spread
-          if (strikeSpread < 5) continue;   // Min $5 spread
-          if (strikeSpread > 50) break;     // Max $50 spread
-        }
+        // Use absolute dollar spread width for all stocks
+        // This works better than percentage across all price ranges
+        // $1 spread works for $40 stock (2.5%) and $100 stock (1%)
+        if (strikeSpread < 1) continue;    // Min $1 spread
+        if (strikeSpread > 100) break;     // Max $100 spread (for very expensive stocks)
 
         const spread = buildBullCallSpread(longLeg, shortLeg, underlyingPrice);
         if (spread) strategies.push(spread);
@@ -130,18 +123,11 @@ export function generateBearPutSpreads(putOptions, underlyingPrice, targetStrike
         const shortLeg = validPuts[j];
         const strikeSpread = longLeg.strike - shortLeg.strike;
 
-        // Adaptive spread width based on underlying price
-        // Low-priced stocks ($10-$100): Use percentage (5-25%)
-        // High-priced stocks ($100+): Use absolute dollar amount ($5-$50)
-        if (underlyingPrice < 100) {
-          const spreadPct = strikeSpread / longLeg.strike;
-          if (spreadPct < 0.05) continue;  // Min 5% for cheap stocks
-          if (spreadPct > 0.25) break;     // Max 25% for cheap stocks
-        } else {
-          // For expensive stocks, use absolute dollar spread
-          if (strikeSpread < 5) continue;   // Min $5 spread
-          if (strikeSpread > 50) break;     // Max $50 spread
-        }
+        // Use absolute dollar spread width for all stocks
+        // This works better than percentage across all price ranges
+        // $1 spread works for $40 stock (2.5%) and $100 stock (1%)
+        if (strikeSpread < 1) continue;    // Min $1 spread
+        if (strikeSpread > 100) break;     // Max $100 spread (for very expensive stocks)
 
         const spread = buildBearPutSpread(longLeg, shortLeg, underlyingPrice);
         if (spread) strategies.push(spread);
@@ -290,16 +276,37 @@ export function rankStrategies(strategies, preferences = {}) {
     return passes;
   });
 
-  // Log rejection stats
+  // Log filtering results
+  console.error(`\n📊 Strategy Filtering:`);
+  console.error(`   Total analyzed: ${strategies.length}`);
+  console.error(`   Passed filters: ${qualified.length}`);
+  console.error(`   Rejected: ${rejected.length}`);
+  console.error(`   Filter thresholds: R:R >= ${minRewardRatio}, Win% >= ${(minProbProfit * 100).toFixed(0)}%`);
+
   if (rejected.length > 0) {
-    console.error(`\n⚠️  Rejected ${rejected.length} strategies due to filters:`);
-    console.error(`   Min R:R: ${minRewardRatio}, Min Win%: ${(minProbProfit * 100).toFixed(0)}%`);
-    rejected.slice(0, 5).forEach(r => {
-      console.error(`   • ${r.strategy} (${r.expiration}): ${r.reasons.join(', ')}`);
+    console.error(`\n⚠️  Top rejection reasons:`);
+
+    // Count rejection reasons
+    const reasonCounts = {};
+    rejected.forEach(r => {
+      r.reasons.forEach(reason => {
+        reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
+      });
     });
-    if (rejected.length > 5) {
-      console.error(`   ... and ${rejected.length - 5} more`);
-    }
+
+    // Show top 3 rejection reasons
+    Object.entries(reasonCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .forEach(([reason, count]) => {
+        console.error(`   • ${reason} (${count} strategies)`);
+      });
+
+    // Show first 3 rejected strategies as examples
+    console.error(`\n   Example rejected strategies:`);
+    rejected.slice(0, 3).forEach(r => {
+      console.error(`   • ${r.strategy}: R:R=${r.risk_reward.toFixed(2)}, Win%=${(r.probability * 100).toFixed(0)}%`);
+    });
   }
 
   // Calculate composite score for each strategy
@@ -347,8 +354,26 @@ function buildBullCallSpread(longLeg, shortLeg, underlyingPrice) {
   const maxRisk = netDebit;
   const breakeven = longLeg.strike + netDebit;
 
-  // Estimate probability (simplified using delta)
-  const probProfit = Math.abs(shortLeg.greeks?.delta || 0.5);
+  // Estimate probability using delta if available, otherwise estimate from moneyness
+  let probProfit;
+  if (shortLeg.greeks?.delta) {
+    probProfit = Math.abs(shortLeg.greeks.delta);
+  } else {
+    // Estimate probability from how far OTM the short strike is
+    const percentOTM = (shortLeg.strike - underlyingPrice) / underlyingPrice;
+    // Rough approximation: 50% at-the-money, decreases as you go OTM
+    if (percentOTM <= 0) {
+      probProfit = 0.65; // ITM
+    } else if (percentOTM < 0.02) {
+      probProfit = 0.55; // Slightly OTM (< 2%)
+    } else if (percentOTM < 0.05) {
+      probProfit = 0.45; // Moderately OTM (2-5%)
+    } else if (percentOTM < 0.10) {
+      probProfit = 0.35; // Further OTM (5-10%)
+    } else {
+      probProfit = 0.25; // Deep OTM (>10%)
+    }
+  }
 
   return {
     type: 'bull_call_spread',
@@ -393,8 +418,26 @@ function buildBearPutSpread(longLeg, shortLeg, underlyingPrice) {
   const maxRisk = netDebit;
   const breakeven = longLeg.strike - netDebit;
 
-  // Estimate probability (simplified using delta)
-  const probProfit = Math.abs(longLeg.greeks?.delta || 0.5);
+  // Estimate probability using delta if available, otherwise estimate from moneyness
+  let probProfit;
+  if (longLeg.greeks?.delta) {
+    probProfit = Math.abs(longLeg.greeks.delta);
+  } else {
+    // Estimate probability from how far OTM the long put strike is
+    const percentBelow = (underlyingPrice - longLeg.strike) / underlyingPrice;
+    // Rough approximation: 50% at-the-money, decreases as strike goes further below
+    if (percentBelow <= 0) {
+      probProfit = 0.65; // ITM
+    } else if (percentBelow < 0.02) {
+      probProfit = 0.55; // Slightly OTM (< 2%)
+    } else if (percentBelow < 0.05) {
+      probProfit = 0.45; // Moderately OTM (2-5%)
+    } else if (percentBelow < 0.10) {
+      probProfit = 0.35; // Further OTM (5-10%)
+    } else {
+      probProfit = 0.25; // Deep OTM (>10%)
+    }
+  }
 
   return {
     type: 'bear_put_spread',
