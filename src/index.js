@@ -89,64 +89,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         }
       },
       {
-        name: 'get_option_greeks',
-        description: 'Get the Greeks (Delta, Gamma, Theta, Vega) for a specific option contract. Greeks measure the sensitivity of an option\'s price to various factors.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            symbol: {
-              type: 'string',
-              description: 'Stock ticker symbol in uppercase (e.g., "IBIT")'
-            },
-            optionType: {
-              type: 'string',
-              enum: ['call', 'put'],
-              description: 'Option type: "call" or "put" (lowercase only)'
-            },
-            strike: {
-              type: 'number',
-              description: 'Strike price as a number (e.g., 70)'
-            },
-            expiration: {
-              type: 'string',
-              pattern: '^\\d{4}-\\d{2}-\\d{2}$',
-              description: 'Expiration date in YYYY-MM-DD format'
-            }
-          },
-          required: ['symbol', 'optionType', 'strike', 'expiration'],
-          additionalProperties: false
-        }
-      },
-      {
-        name: 'get_implied_volatility',
-        description: 'Get the implied volatility (IV) for a specific option contract. IV represents the market\'s expectation of future volatility.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            symbol: {
-              type: 'string',
-              description: 'Stock ticker symbol in uppercase'
-            },
-            optionType: {
-              type: 'string',
-              enum: ['call', 'put'],
-              description: 'Option type: "call" or "put" (lowercase only)'
-            },
-            strike: {
-              type: 'number',
-              description: 'Strike price as a number'
-            },
-            expiration: {
-              type: 'string',
-              pattern: '^\\d{4}-\\d{2}-\\d{2}$',
-              description: 'Expiration date in YYYY-MM-DD format'
-            }
-          },
-          required: ['symbol', 'optionType', 'strike', 'expiration'],
-          additionalProperties: false
-        }
-      },
-      {
         name: 'get_historical_aggregates',
         description: 'Get historical OHLC aggregates for an option contract with custom time intervals (e.g., 5-minute, hourly, daily bars). Useful for charting and technical analysis.',
         inputSchema: {
@@ -195,69 +137,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         }
       },
       {
-        name: 'get_previous_day_ohlc',
-        description: 'Get the previous trading day\'s open, high, low, close, and volume for an option contract. Essential for daily performance analysis.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            symbol: {
-              type: 'string',
-              description: 'Stock ticker symbol'
-            },
-            optionType: {
-              type: 'string',
-              enum: ['call', 'put'],
-              description: 'Option type: "call" or "put"'
-            },
-            strike: {
-              type: 'number',
-              description: 'Strike price'
-            },
-            expiration: {
-              type: 'string',
-              pattern: '^\\d{4}-\\d{2}-\\d{2}$',
-              description: 'Expiration date in YYYY-MM-DD format'
-            }
-          },
-          required: ['symbol', 'optionType', 'strike', 'expiration'],
-          additionalProperties: false
-        }
-      },
-      {
-        name: 'get_daily_open_close',
-        description: 'Get opening and closing prices for an option on a specific date, including pre-market and after-hours data. Useful for analyzing daily performance and off-hours trading activity.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            symbol: {
-              type: 'string',
-              description: 'Stock ticker symbol'
-            },
-            optionType: {
-              type: 'string',
-              enum: ['call', 'put'],
-              description: 'Option type: "call" or "put"'
-            },
-            strike: {
-              type: 'number',
-              description: 'Strike price'
-            },
-            expiration: {
-              type: 'string',
-              pattern: '^\\d{4}-\\d{2}-\\d{2}$',
-              description: 'Expiration date in YYYY-MM-DD format'
-            },
-            date: {
-              type: 'string',
-              pattern: '^\\d{4}-\\d{2}-\\d{2}$',
-              description: 'The date to get open/close data for in YYYY-MM-DD format'
-            }
-          },
-          required: ['symbol', 'optionType', 'strike', 'expiration', 'date'],
-          additionalProperties: false
-        }
-      },
-      {
         name: 'search_options',
         description: 'Search for stock symbols that have options available. Use this to find the correct ticker symbol before querying options.',
         inputSchema: {
@@ -269,80 +148,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             }
           },
           required: ['query'],
-          additionalProperties: false
-        }
-      },
-      {
-        name: 'get_unusual_options_activity',
-        description: 'Get unusual options activity based on volume and open interest',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            minVolume: {
-              type: 'number',
-              description: 'Minimum volume threshold (default: 1000)'
-            },
-            minOI: {
-              type: 'number',
-              description: 'Minimum open interest threshold (default: 5000)'
-            }
-          }
-        }
-      },
-      {
-        name: 'get_last_trade',
-        description: 'Get the most recent trade for a specific option contract. Returns real-time trade data including price, size, exchange, and timestamp. Useful for monitoring current market activity.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            symbol: {
-              type: 'string',
-              description: 'Stock ticker symbol in uppercase'
-            },
-            optionType: {
-              type: 'string',
-              enum: ['call', 'put'],
-              description: 'Option type: "call" or "put" (lowercase only)'
-            },
-            strike: {
-              type: 'number',
-              description: 'Strike price as a number'
-            },
-            expiration: {
-              type: 'string',
-              pattern: '^\\d{4}-\\d{2}-\\d{2}$',
-              description: 'Expiration date in YYYY-MM-DD format'
-            }
-          },
-          required: ['symbol', 'optionType', 'strike', 'expiration'],
-          additionalProperties: false
-        }
-      },
-      {
-        name: 'get_option_chain_snapshot',
-        description: 'Get a comprehensive market snapshot of all option contracts for a symbol with Greeks, IV, and analysis. Includes underlying price, put/call ratios, and organized data by expiration. Perfect for strategy comparison and market overview.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            symbol: {
-              type: 'string',
-              description: 'Stock ticker symbol in uppercase'
-            },
-            expiration: {
-              type: 'string',
-              pattern: '^\\d{4}-\\d{2}-\\d{2}$',
-              description: 'Optional: Filter by specific expiration date'
-            },
-            strikeMin: {
-              type: 'number',
-              description: 'Optional: Minimum strike price to include'
-            },
-            strikeMax: {
-              type: 'number',
-              description: 'Optional: Maximum strike price to include'
-            }
-          },
-          required: ['symbol'],
           additionalProperties: false
         }
       },
@@ -658,17 +463,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const data = await client.getQuote(args.symbol, args.optionType, args.strike, args.expiration);
         return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
       }
-      
-      case 'get_option_greeks': {
-        const data = await client.getGreeks(args.symbol, args.optionType, args.strike, args.expiration);
-        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-      }
-      
-      case 'get_implied_volatility': {
-        const data = await client.getImpliedVolatility(args.symbol, args.optionType, args.strike, args.expiration);
-        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-      }
-      
+
       case 'get_historical_aggregates': {
         const data = await client.getHistoricalAggregates(
           args.symbol, args.optionType, args.strike, args.expiration,
@@ -676,45 +471,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         );
         return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
       }
-      
-      case 'get_previous_day_ohlc': {
-        const data = await client.getPreviousDayOHLC(
-          args.symbol, args.optionType, args.strike, args.expiration
-        );
-        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-      }
-      
-      case 'get_daily_open_close': {
-        const data = await client.getDailyOpenClose(
-          args.symbol, args.optionType, args.strike, args.expiration, args.date
-        );
-        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-      }
-      
+
       case 'search_options': {
         const data = await client.searchOptions(args.query);
         return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
       }
-      
-      case 'get_unusual_options_activity': {
-        const data = await client.getUnusualActivity(args.minVolume, args.minOI);
-        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-      }
-      
-      case 'get_last_trade': {
-        const data = await client.getLastTrade(
-          args.symbol, args.optionType, args.strike, args.expiration
-        );
-        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-      }
-      
-      case 'get_option_chain_snapshot': {
-        const data = await client.getOptionChainSnapshot(
-          args.symbol, args.expiration, args.strikeMin, args.strikeMax
-        );
-        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-      }
-      
+
       case 'get_option_analytics': {
         const data = await client.getOptionAnalytics(
           args.symbol, args.optionType, args.strike, args.expiration, args.targetPrice

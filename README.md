@@ -4,20 +4,16 @@ An MCP (Model Context Protocol) server that integrates Massive.com's Options API
 
 ## Features
 
-- **Option Chain Analysis**: Get complete option chains with all strikes and expirations
-- **Real-time Quotes**: Access live option prices and market data
-- **Greeks Calculation**: Retrieve Delta, Gamma, Theta, Vega, and Rho
-- **Implied Volatility**: Analyze IV for any option contract
-- **Historical Data**: Access historical option prices and trends
-- **Unusual Activity Scanner**: Find high-volume and high-OI options
-- **Search Functionality**: Search options by symbol or keyword
-- **Advanced Analytics** 🆕: Comprehensive options analysis including:
-  - Black-Scholes probability calculations (ITM/OTM probabilities)
-  - Expected move ranges based on implied volatility
-  - Break-even analysis and intrinsic/time value breakdown
-  - Leverage calculations and daily theta decay
-  - Risk/reward analysis with custom target prices
-  - Volume/OI ratio analysis for unusual activity detection
+**Professional-Grade Options Analysis MCP Server**
+
+This streamlined MCP server provides 9 essential tools for serious options trading:
+
+- **Core Data Access**: Real-time quotes with Greeks/IV, option chains, historical aggregates, symbol search
+- **Advanced Analytics**: Comprehensive single-option analysis with Black-Scholes probabilities, expected moves, break-even, leverage, and risk/reward calculations
+- **Market Structure Analysis**: Put/call ratios, gamma exposure (GEX), max pain, and open interest distribution
+- **Volatility Analysis**: IV smile/skew patterns, term structure, and pricing anomalies across strikes/expirations
+- **Dealer Positioning**: HeatSeeker-style GEX/VEX matrices showing where dealers dampen or amplify moves
+- **Deep Multi-Strategy Analysis**: All-in-one tool combining institutional flow detection, strategy generation, position sizing, and P&L scenarios
 
 ## Setup
 
@@ -66,91 +62,66 @@ MASSIVE_API_KEY=your_actual_api_key_here
 
 Once connected, you can ask Claude to:
 
-- "Show me the option chain for AAPL"
-- "What are the Greeks for SPY 450 call expiring next Friday?"
-- "Find unusual options activity with volume > 10,000"
-- "Get the implied volatility for TSLA puts"
-- "Show me historical data for NVDA 500 calls from last month"
-- "Search for options on tech stocks"
-- "Analyze the IBIT $62 call expiring 2025-11-14 with full analytics"
-- "What's the probability of SPY 480 put finishing ITM?"
-- "Calculate risk/reward for TSLA 250 call with $300 target"
-- "Show expected move range for QQQ based on current IV"
+- "Get quote for AAPL 180 call expiring 2025-12-20"
+- "Show me the option chain for SPY expiring 2025-11-15"
+- "Get historical data for NVDA 140 call from Oct 1 to Nov 1, daily bars"
+- "Search for Bitcoin ETF symbols"
+- "Analyze the TSLA 250 call expiring 2025-12-20 - show probabilities and risk/reward"
 - "Analyze SPY volatility smile and term structure"
-- "Show market structure for TSLA including gamma exposure and max pain"
-- "What's the put/call ratio for AAPL?"
+- "Show market structure for QQQ - put/call ratios, GEX, and max pain"
+- "Get dealer positioning matrix for IBIT with GEX and VEX"
+- "Run deep analysis on SPY with $10K account - find best strategies"
 
-## Available Tools
+## Available Tools (9 Essential Tools)
 
-### get_option_chain
-Retrieves all available options for a symbol.
+### 1. get_option_quote
+Get real-time data for ONE specific option including price, Greeks, IV, volume, and OI.
+- **Required**: symbol, optionType (call/put), strike, expiration (YYYY-MM-DD)
+- **Returns**: Bid/ask, Greeks (delta, gamma, theta, vega), IV, volume, open interest
+
+### 2. get_option_chain
+Retrieve ALL available options for a symbol (use sparingly - returns hundreds of contracts).
 - **Required**: symbol
 - **Optional**: expiration (YYYY-MM-DD)
 
-### get_option_quote
-Gets real-time quote for a specific option.
-- **Required**: symbol, optionType (call/put), strike, expiration
+### 3. get_historical_aggregates
+Get historical OHLC bars for an option with custom intervals (5-min, hourly, daily, etc).
+- **Required**: symbol, optionType, strike, expiration, multiplier, timespan, from, to
+- **Use for**: Backtesting, charting, technical analysis
 
-### get_option_greeks
-Calculates Greeks for an option contract.
+### 4. search_options
+Search for stock symbols that have options available.
+- **Required**: query (company name or ticker)
+
+### 5. get_option_analytics
+Comprehensive analytics for a single option including Black-Scholes calculations.
 - **Required**: symbol, optionType, strike, expiration
+- **Optional**: targetPrice
+- **Returns**: Break-even, ITM probability, expected moves, leverage, time value, risk/reward
 
-### get_implied_volatility
-Gets IV for a specific option.
-- **Required**: symbol, optionType, strike, expiration
-
-### get_historical_option_data
-Retrieves historical data for an option.
-- **Required**: symbol, optionType, strike, expiration, startDate, endDate
-
-### search_options
-Searches for options by query.
-- **Required**: query
-
-### get_unusual_options_activity
-Finds unusual activity based on volume/OI.
-- **Optional**: minVolume (default: 1000), minOI (default: 5000)
-
-### get_option_analytics 🆕
-Provides comprehensive analytics for a specific option including probability calculations, expected moves, and risk/reward analysis.
-- **Required**: symbol, optionType (call/put), strike, expiration
-- **Optional**: targetPrice (for risk/reward calculations)
-
-Returns advanced metrics including:
-- Break-even price and intrinsic/time value breakdown
-- Probability of finishing ITM using Black-Scholes model
-- Expected move ranges (1σ and 2σ) based on implied volatility
-- Leverage factor and daily theta decay
-- Volume/OI ratio analysis for detecting unusual activity
-- Risk/reward calculations when target price is provided
-
-### get_option_chain_snapshot
-Gets comprehensive market snapshot of all options for a symbol with analytics.
-- **Required**: symbol
-- **Optional**: expiration, strikeMin, strikeMax
-
-### get_volatility_analysis 🆕
-Analyzes volatility characteristics including:
+### 6. get_volatility_analysis
+Analyze IV characteristics across strikes and expirations.
 - **Required**: symbol
 - **Optional**: expiration
+- **Returns**: Volatility smile/skew, term structure, ATM IV, pattern detection
 
-Returns:
-- Volatility smile/skew analysis for each expiration
-- Term structure analysis (contango/backwardation)
-- ATM implied volatility levels
-- Smile steepness and pattern detection
-
-### get_market_structure 🆕
-Provides comprehensive market structure analysis including:
+### 7. get_market_structure
+Market structure analysis showing dealer positioning and sentiment.
 - **Required**: symbol
 - **Optional**: expiration
+- **Returns**: Put/call ratios, GEX, max pain, OI distribution, support/resistance
 
-Returns:
-- Put/Call ratios (volume, open interest, premium-weighted)
-- Gamma exposure (GEX) and dealer positioning
-- Max pain calculation and expected price magnets
-- Open interest distribution with support/resistance levels
-- Overall market interpretation
+### 8. get_dealer_positioning_matrix
+HeatSeeker-style GEX/VEX analysis across all strikes and expirations.
+- **Required**: symbol
+- **Optional**: expirations (array), strike_range, include_vex, format
+- **Returns**: Dealer gamma/vega exposure, magnet levels, danger zones, trading implications
+
+### 9. deep_options_analysis
+All-in-one comprehensive analysis with strategy generation and position sizing.
+- **Required**: symbol, account_size
+- **Optional**: target_expirations, strikes_to_analyze, mode, strategies, risk_config
+- **Returns**: Institutional flow detection, ranked strategy recommendations, position sizes, P&L scenarios
 
 ## Advanced Analytics Documentation
 
