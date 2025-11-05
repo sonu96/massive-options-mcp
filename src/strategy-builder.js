@@ -234,18 +234,55 @@ export function generateCalendarSpreads(optionsByExpiration, underlyingPrice, op
  */
 export function rankStrategies(strategies, preferences = {}) {
   const {
-    minRewardRatio = 2.0,
-    minProbProfit = 0.5,
+    minRewardRatio = 1.5,  // Lowered from 2.0 - more realistic for high-priced stocks
+    minProbProfit = 0.45,  // Lowered from 0.5 - 45% win rate is still profitable with good R:R
     maxRisk = Infinity,
     preferenceType = 'balanced' // 'aggressive', 'balanced', 'conservative'
   } = preferences;
 
   // Filter out strategies that don't meet minimum criteria
-  const qualified = strategies.filter(s =>
-    s.risk_reward >= minRewardRatio &&
-    s.probability_profit >= minProbProfit &&
-    s.max_risk <= maxRisk
-  );
+  const rejected = [];
+  const qualified = strategies.filter(s => {
+    const reasons = [];
+
+    if (s.risk_reward < minRewardRatio) {
+      reasons.push(`R:R ${s.risk_reward.toFixed(2)} < ${minRewardRatio}`);
+    }
+    if (s.probability_profit < minProbProfit) {
+      reasons.push(`Win% ${(s.probability_profit * 100).toFixed(0)}% < ${(minProbProfit * 100).toFixed(0)}%`);
+    }
+    if (s.max_risk > maxRisk) {
+      reasons.push(`Risk $${s.max_risk} > $${maxRisk}`);
+    }
+
+    const passes = s.risk_reward >= minRewardRatio &&
+                   s.probability_profit >= minProbProfit &&
+                   s.max_risk <= maxRisk;
+
+    if (!passes) {
+      rejected.push({
+        strategy: s.strategy_name,
+        expiration: s.expiration,
+        reasons: reasons,
+        risk_reward: s.risk_reward,
+        probability: s.probability_profit
+      });
+    }
+
+    return passes;
+  });
+
+  // Log rejection stats
+  if (rejected.length > 0) {
+    console.error(`\n⚠️  Rejected ${rejected.length} strategies due to filters:`);
+    console.error(`   Min R:R: ${minRewardRatio}, Min Win%: ${(minProbProfit * 100).toFixed(0)}%`);
+    rejected.slice(0, 5).forEach(r => {
+      console.error(`   • ${r.strategy} (${r.expiration}): ${r.reasons.join(', ')}`);
+    });
+    if (rejected.length > 5) {
+      console.error(`   ... and ${rejected.length - 5} more`);
+    }
+  }
 
   // Calculate composite score for each strategy
   qualified.forEach(strategy => {

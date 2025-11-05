@@ -144,7 +144,8 @@ export function validateRiskParameters(riskConfig = {}) {
   }
 
   // Minimum reward ratio (1.0 to 10.0)
-  const minRewardRatio = riskConfig.min_reward_ratio || 2.0;
+  // Lowered default from 2.0 to 1.5 - more realistic for high-priced stocks
+  const minRewardRatio = riskConfig.min_reward_ratio || 1.5;
   validated.min_reward_ratio = Math.max(1.0, Math.min(10.0, minRewardRatio));
   if (minRewardRatio !== validated.min_reward_ratio) {
     validated.warnings = validated.warnings || [];
@@ -152,7 +153,8 @@ export function validateRiskParameters(riskConfig = {}) {
   }
 
   // Minimum probability of profit (0.3 to 0.95)
-  const minProbProfit = riskConfig.min_prob_profit || 0.5;
+  // Lowered default from 0.5 to 0.45 - 45% win rate is still profitable with good R:R
+  const minProbProfit = riskConfig.min_prob_profit || 0.45;
   validated.min_prob_profit = Math.max(0.3, Math.min(0.95, minProbProfit));
   if (minProbProfit !== validated.min_prob_profit) {
     validated.warnings = validated.warnings || [];
