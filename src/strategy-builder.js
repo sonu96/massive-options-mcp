@@ -49,15 +49,23 @@ export function generateBullCallSpreads(callOptions, underlyingPrice, targetStri
       // Only consider strikes within 20% of current price
       if (longLeg.strike > underlyingPrice * 1.2) break;
 
-      // Find potential short legs (5-25% above long strike)
+      // Find potential short legs
       for (let j = i + 1; j < validCalls.length; j++) {
         const shortLeg = validCalls[j];
         const strikeSpread = shortLeg.strike - longLeg.strike;
-        const spreadPct = strikeSpread / longLeg.strike;
 
-        // Spread width between 5-25% of long strike
-        if (spreadPct < 0.05) continue;
-        if (spreadPct > 0.25) break;
+        // Adaptive spread width based on underlying price
+        // Low-priced stocks ($10-$100): Use percentage (5-25%)
+        // High-priced stocks ($100+): Use absolute dollar amount ($5-$50)
+        if (underlyingPrice < 100) {
+          const spreadPct = strikeSpread / longLeg.strike;
+          if (spreadPct < 0.05) continue;  // Min 5% for cheap stocks
+          if (spreadPct > 0.25) break;     // Max 25% for cheap stocks
+        } else {
+          // For expensive stocks, use absolute dollar spread
+          if (strikeSpread < 5) continue;   // Min $5 spread
+          if (strikeSpread > 50) break;     // Max $50 spread
+        }
 
         const spread = buildBullCallSpread(longLeg, shortLeg, underlyingPrice);
         if (spread) strategies.push(spread);
@@ -65,6 +73,7 @@ export function generateBullCallSpreads(callOptions, underlyingPrice, targetStri
     }
   }
 
+  console.error(`Generated ${strategies.length} bull call spreads for price $${underlyingPrice}`);
   return strategies;
 }
 
@@ -116,15 +125,23 @@ export function generateBearPutSpreads(putOptions, underlyingPrice, targetStrike
       // Only consider strikes within 20% below current price
       if (longLeg.strike < underlyingPrice * 0.8) break;
 
-      // Find potential short legs (5-25% below long strike)
+      // Find potential short legs
       for (let j = i + 1; j < validPuts.length; j++) {
         const shortLeg = validPuts[j];
         const strikeSpread = longLeg.strike - shortLeg.strike;
-        const spreadPct = strikeSpread / longLeg.strike;
 
-        // Spread width between 5-25% of long strike
-        if (spreadPct < 0.05) continue;
-        if (spreadPct > 0.25) break;
+        // Adaptive spread width based on underlying price
+        // Low-priced stocks ($10-$100): Use percentage (5-25%)
+        // High-priced stocks ($100+): Use absolute dollar amount ($5-$50)
+        if (underlyingPrice < 100) {
+          const spreadPct = strikeSpread / longLeg.strike;
+          if (spreadPct < 0.05) continue;  // Min 5% for cheap stocks
+          if (spreadPct > 0.25) break;     // Max 25% for cheap stocks
+        } else {
+          // For expensive stocks, use absolute dollar spread
+          if (strikeSpread < 5) continue;   // Min $5 spread
+          if (strikeSpread > 50) break;     // Max $50 spread
+        }
 
         const spread = buildBearPutSpread(longLeg, shortLeg, underlyingPrice);
         if (spread) strategies.push(spread);
@@ -132,6 +149,7 @@ export function generateBearPutSpreads(putOptions, underlyingPrice, targetStrike
     }
   }
 
+  console.error(`Generated ${strategies.length} bear put spreads for price $${underlyingPrice}`);
   return strategies;
 }
 
