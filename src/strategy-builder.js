@@ -16,8 +16,8 @@ export function generateBullCallSpreads(callOptions, underlyingPrice, targetStri
   const validCalls = callOptions.filter(opt =>
     opt.price?.last > 0 &&
     opt.strike &&
-    opt.expiration &&
-    opt.greeks?.delta
+    opt.expiration
+    // Greeks are optional - not all options have them
   ).sort((a, b) => a.strike - b.strike);
 
   if (validCalls.length < 2) {
@@ -83,8 +83,8 @@ export function generateBearPutSpreads(putOptions, underlyingPrice, targetStrike
   const validPuts = putOptions.filter(opt =>
     opt.price?.last > 0 &&
     opt.strike &&
-    opt.expiration &&
-    opt.greeks?.delta
+    opt.expiration
+    // Greeks are optional - not all options have them
   ).sort((a, b) => b.strike - a.strike); // Sort descending for puts
 
   if (validPuts.length < 2) {
