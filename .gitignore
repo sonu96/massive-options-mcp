@@ -4,3 +4,7 @@ node_modules/
 *.log
 dist/
 build/
+
+# Personal trading data - DO NOT COMMIT
+.claude/positions.json
+.claude/circuit-breakers.json
