@@ -9,6 +9,14 @@ import {
 import { MassiveOptionsClient } from './massive-client.js';
 import dotenv from 'dotenv';
 
+// Import risk management and analysis modules
+import { calculatePortfolioGreeks, calculateScenarioPnL, generatePortfolioRiskWarnings } from './portfolio-greeks.js';
+import { addPosition, getOpenPositions, closePosition, calculatePositionPnL, generateExitSignals, monitorPositions } from './position-tracker.js';
+import { checkCircuitBreakers, recordTrade, resetCircuitBreakers, getBreakerStatus, DEFAULT_BREAKERS } from './circuit-breakers.js';
+import { runStressTest, runMonteCarloSimulation, STRESS_SCENARIOS } from './stress-testing.js';
+import { detectUnusualActivity, analyzePutCallFlow, analyzeFlowPersistence } from './flow-detector.js';
+import { analyzeOptionLiquidity, filterOptionsByLiquidity, assessMarketDepth } from './liquidity-filter.js';
+
 dotenv.config();
 
 const server = new Server(
@@ -364,6 +372,206 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             }
           ]
         }
+      },
+      {
+        name: 'get_portfolio_greeks',
+        description: 'Calculate portfolio-level Greeks by aggregating across all positions. Shows total delta, gamma, theta, vega exposure with risk warnings when limits exceeded. Essential for understanding overall portfolio risk and market exposure.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            positions: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  symbol: { type: 'string' },
+                  quantity: { type: 'number' },
+                  delta: { type: 'number' },
+                  gamma: { type: 'number' },
+                  theta: { type: 'number' },
+                  vega: { type: 'number' }
+                }
+              },
+              description: 'Array of positions with their Greeks'
+            },
+            account_size: {
+              type: 'number',
+              description: 'Trading account size for risk percentage calculations'
+            }
+          },
+          required: ['positions'],
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'track_position',
+        description: 'Add a new position to tracking system. Stores position in .claude/positions.json for ongoing monitoring, P&L calculation, and exit signal generation.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            symbol: { type: 'string', description: 'Stock ticker symbol' },
+            strategy: { type: 'string', description: 'Strategy name (e.g., "bull_call_spread")' },
+            entry_price: { type: 'number', description: 'Entry price paid per contract' },
+            entry_credit: { type: 'number', description: 'Credit received (for credit spreads)' },
+            contracts: { type: 'number', description: 'Number of contracts' },
+            expiration: { type: 'string', description: 'Expiration date YYYY-MM-DD' },
+            strike_price: { type: 'number', description: 'Strike price (or short strike for spreads)' },
+            notes: { type: 'string', description: 'Optional notes about the trade' }
+          },
+          required: ['symbol', 'strategy', 'expiration'],
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'get_tracked_positions',
+        description: 'View all tracked positions with current P&L and exit signals. Returns positions with alerts for profit targets, stop losses, and time-based exits.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            status: {
+              type: 'string',
+              enum: ['open', 'closed', 'all'],
+              description: 'Filter by status. Default: "open"'
+            }
+          },
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'close_position',
+        description: 'Close a tracked position and record exit details.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            position_id: { type: 'string', description: 'Position ID from tracked positions' },
+            exit_price: { type: 'number', description: 'Exit price per contract' },
+            exit_profit: { type: 'number', description: 'Total profit/loss from position' }
+          },
+          required: ['position_id'],
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'check_circuit_breakers',
+        description: 'Check if circuit breakers allow trading. Prevents catastrophic losses by halting trading when daily loss limits, portfolio risk limits, or VIX spikes are exceeded. Returns trading_allowed boolean and any warnings.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            account_size: { type: 'number', description: 'Trading account size' },
+            daily_pnl: { type: 'number', description: 'Current daily P&L (negative for loss)' },
+            portfolio_risk: { type: 'number', description: 'Total portfolio risk exposure' },
+            vix_level: { type: 'number', description: 'Current VIX level' },
+            positions: {
+              type: 'array',
+              items: { type: 'object' },
+              description: 'Array of current positions'
+            }
+          },
+          required: ['account_size'],
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'stress_test_portfolio',
+        description: 'Run stress tests on portfolio to estimate P&L under various market scenarios (crash, volatility spike, sideways grind, etc.). Shows worst-case and best-case scenarios with recommendations. Includes Monte Carlo simulation for Value-at-Risk (VaR) calculations.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            portfolio_greeks: {
+              type: 'object',
+              properties: {
+                net_delta: { type: 'number' },
+                net_gamma: { type: 'number' },
+                net_theta: { type: 'number' },
+                net_vega: { type: 'number' }
+              },
+              description: 'Portfolio Greeks from get_portfolio_greeks'
+            },
+            scenarios: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Optional: Specific scenarios to test. Available: MARKET_CRASH_MILD, MARKET_CRASH_SEVERE, FLASH_CRASH, VOLATILITY_CRUSH, SLOW_BLEED, RALLY, SIDEWAYS, WHIPSAW'
+            },
+            run_monte_carlo: {
+              type: 'boolean',
+              description: 'Run Monte Carlo simulation for VaR calculations. Default: false'
+            },
+            monte_carlo_config: {
+              type: 'object',
+              properties: {
+                num_simulations: { type: 'number', description: 'Number of simulations (default: 1000)' },
+                days_forward: { type: 'number', description: 'Time horizon in days (default: 30)' },
+                daily_volatility: { type: 'number', description: 'Daily volatility (default: 0.01 = 1%)' }
+              }
+            }
+          },
+          required: ['portfolio_greeks'],
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'detect_unusual_flow',
+        description: 'Detect smart money / institutional activity in options. Identifies unusual volume, block trades, sweeps, and put/call flow imbalances. Returns conviction scores and bullish/bearish signals.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            symbol: { type: 'string', description: 'Stock ticker symbol' },
+            options: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  contract_type: { type: 'string', enum: ['call', 'put'] },
+                  strike_price: { type: 'number' },
+                  volume: { type: 'number' },
+                  open_interest: { type: 'number' },
+                  last_price: { type: 'number' }
+                }
+              },
+              description: 'Array of option contracts with volume data'
+            },
+            config: {
+              type: 'object',
+              properties: {
+                volume_multiplier: { type: 'number', description: 'Volume must be Nx average (default: 3)' },
+                min_volume: { type: 'number', description: 'Minimum absolute volume (default: 100)' },
+                min_premium: { type: 'number', description: 'Minimum premium spent (default: 50000)' }
+              }
+            }
+          },
+          required: ['symbol', 'options'],
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'assess_liquidity',
+        description: 'Analyze option liquidity to ensure tradeable markets. Calculates liquidity score (0-100), quality rating (EXCELLENT/GOOD/FAIR/POOR), and warns about wide spreads or low volume. Prevents recommending illiquid options with poor fills.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            option: {
+              type: 'object',
+              properties: {
+                bid: { type: 'number' },
+                ask: { type: 'number' },
+                volume: { type: 'number' },
+                open_interest: { type: 'number' }
+              },
+              description: 'Option data with bid, ask, volume, open interest'
+            },
+            options_array: {
+              type: 'array',
+              items: { type: 'object' },
+              description: 'Array of options to filter by liquidity'
+            },
+            min_quality: {
+              type: 'string',
+              enum: ['EXCELLENT', 'GOOD', 'FAIR'],
+              description: 'Minimum quality threshold (default: FAIR)'
+            }
+          },
+          additionalProperties: false
+        }
       }
     ]
   };
@@ -521,6 +729,134 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           current_price: args.current_price
         });
         return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+      }
+
+      case 'get_portfolio_greeks': {
+        const result = calculatePortfolioGreeks(args.positions, {
+          account_size: args.account_size
+        });
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'track_position': {
+        const position = addPosition({
+          symbol: args.symbol,
+          strategy: args.strategy,
+          entry_price: args.entry_price,
+          entry_credit: args.entry_credit,
+          contracts: args.contracts,
+          expiration: args.expiration,
+          strike_price: args.strike_price,
+          notes: args.notes
+        });
+        return { content: [{ type: 'text', text: JSON.stringify({
+          success: true,
+          message: 'Position tracked successfully',
+          position
+        }, null, 2) }] };
+      }
+
+      case 'get_tracked_positions': {
+        const status = args.status || 'open';
+        let positions;
+
+        if (status === 'open') {
+          positions = getOpenPositions();
+        } else if (status === 'all') {
+          const { loadPositions } = await import('./position-tracker.js');
+          positions = loadPositions();
+        } else {
+          const { loadPositions } = await import('./position-tracker.js');
+          positions = loadPositions().filter(p => p.status === status);
+        }
+
+        return { content: [{ type: 'text', text: JSON.stringify({
+          total_positions: positions.length,
+          positions
+        }, null, 2) }] };
+      }
+
+      case 'close_position': {
+        const closedPosition = closePosition(args.position_id, {
+          exit_price: args.exit_price,
+          exit_profit: args.exit_profit
+        });
+        return { content: [{ type: 'text', text: JSON.stringify({
+          success: true,
+          message: 'Position closed successfully',
+          position: closedPosition
+        }, null, 2) }] };
+      }
+
+      case 'check_circuit_breakers': {
+        const result = checkCircuitBreakers({
+          account_size: args.account_size,
+          daily_pnl: args.daily_pnl,
+          portfolio_risk: args.portfolio_risk,
+          vix_level: args.vix_level,
+          positions: args.positions || []
+        }, DEFAULT_BREAKERS);
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'stress_test_portfolio': {
+        const stressTestResult = runStressTest(
+          args.portfolio_greeks,
+          args.scenarios || null,
+          {}
+        );
+
+        let result = { stress_test: stressTestResult };
+
+        if (args.run_monte_carlo) {
+          const monteCarloResult = runMonteCarloSimulation(
+            args.portfolio_greeks,
+            args.monte_carlo_config || {}
+          );
+          result.monte_carlo = monteCarloResult;
+        }
+
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'detect_unusual_flow': {
+        const flowAnalysis = detectUnusualActivity(
+          args.options,
+          args.config || {}
+        );
+
+        // Also analyze put/call flow if we have both
+        const calls = args.options.filter(o => o.contract_type === 'call');
+        const puts = args.options.filter(o => o.contract_type === 'put');
+
+        let putCallAnalysis = null;
+        if (calls.length > 0 && puts.length > 0) {
+          putCallAnalysis = analyzePutCallFlow(calls, puts);
+        }
+
+        return { content: [{ type: 'text', text: JSON.stringify({
+          symbol: args.symbol,
+          unusual_activity: flowAnalysis,
+          put_call_flow: putCallAnalysis
+        }, null, 2) }] };
+      }
+
+      case 'assess_liquidity': {
+        let result;
+
+        if (args.option) {
+          // Analyze single option
+          result = analyzeOptionLiquidity(args.option);
+        } else if (args.options_array) {
+          // Filter array of options
+          result = filterOptionsByLiquidity(args.options_array, {
+            min_quality: args.min_quality || 'FAIR'
+          });
+        } else {
+          throw new Error('Must provide either "option" or "options_array" parameter');
+        }
+
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
 
       default:
