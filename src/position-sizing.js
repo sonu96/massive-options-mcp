@@ -1,14 +1,17 @@
 // Position sizing and risk management module
 // Calculates optimal position sizes based on account size and risk parameters
 
+import { adjustStrategyForCosts, calculateTrueExpectedValue } from './transaction-costs.js';
+
 /**
  * Calculate position size for a strategy
  * @param {Object} strategy - Strategy object with max_risk
  * @param {number} accountSize - Total account size
  * @param {Object} riskConfig - Risk configuration
+ * @param {boolean} includeCosts - Whether to include transaction costs (default: true)
  * @returns {Object} Position sizing recommendation
  */
-export function calculatePositionSize(strategy, accountSize, riskConfig = {}) {
+export function calculatePositionSize(strategy, accountSize, riskConfig = {}, includeCosts = true) {
   const {
     max_risk_pct = 0.02, // Default 2% risk per trade
     min_reward_ratio = 2.0,
@@ -17,12 +20,23 @@ export function calculatePositionSize(strategy, accountSize, riskConfig = {}) {
     contract_multiplier = 100 // Standard options contract size
   } = riskConfig;
 
-  // Validate strategy meets minimum criteria
-  if (strategy.risk_reward < min_reward_ratio) {
+  // Adjust strategy for transaction costs if enabled
+  let adjustedStrategy = strategy;
+  let transactionCosts = null;
+
+  if (includeCosts) {
+    const numLegs = strategy.legs?.length || 2; // Default to 2 legs
+    adjustedStrategy = adjustStrategyForCosts(strategy, 1, numLegs);
+    transactionCosts = adjustedStrategy.transaction_costs;
+  }
+
+  // Validate strategy meets minimum criteria (using adjusted values)
+  if (adjustedStrategy.risk_reward_ratio < min_reward_ratio) {
     return {
       recommended_contracts: 0,
-      reason: `Risk/reward ratio ${strategy.risk_reward} below minimum ${min_reward_ratio}`,
-      rejected: true
+      reason: `Risk/reward ratio ${adjustedStrategy.risk_reward_ratio.toFixed(2)} below minimum ${min_reward_ratio} ${includeCosts ? '(after transaction costs)' : ''}`,
+      rejected: true,
+      transaction_costs: transactionCosts
     };
   }
 
@@ -30,7 +44,8 @@ export function calculatePositionSize(strategy, accountSize, riskConfig = {}) {
     return {
       recommended_contracts: 0,
       reason: `Probability ${strategy.probability_profit} below minimum ${min_prob_profit}`,
-      rejected: true
+      rejected: true,
+      transaction_costs: transactionCosts
     };
   }
 
@@ -40,8 +55,8 @@ export function calculatePositionSize(strategy, accountSize, riskConfig = {}) {
   // Calculate max position size based on concentration limit
   const maxPositionDollars = accountSize * max_concentration;
 
-  // Calculate contracts based on risk per contract
-  const riskPerContract = strategy.max_risk * contract_multiplier;
+  // Calculate contracts based on risk per contract (using adjusted max_loss)
+  const riskPerContract = adjustedStrategy.max_loss * contract_multiplier;
   const contractsBasedOnRisk = Math.floor(maxRiskDollars / riskPerContract);
 
   // Calculate contracts based on concentration limit
@@ -54,15 +69,32 @@ export function calculatePositionSize(strategy, accountSize, riskConfig = {}) {
   // Ensure at least 1 contract if strategy qualifies
   const finalContracts = Math.max(1, recommendedContracts);
 
-  // Calculate actual dollar amounts
+  // Calculate actual dollar amounts (using adjusted values)
   const totalRisk = finalContracts * riskPerContract;
   const totalCost = finalContracts * totalCostPerContract;
-  const potentialProfit = finalContracts * strategy.max_profit * contract_multiplier;
+  const potentialProfit = finalContracts * adjustedStrategy.max_profit * contract_multiplier;
 
-  // Calculate Kelly criterion (optional, for reference)
+  // Calculate total transaction costs for the position
+  const totalTransactionCosts = includeCosts ? transactionCosts * finalContracts : 0;
+
+  // Calculate true expected value with costs
+  let trueEV = null;
+  if (includeCosts) {
+    const numLegs = strategy.legs?.length || 2;
+    trueEV = calculateTrueExpectedValue(
+      potentialProfit - totalRisk, // Theoretical EV
+      strategy.probability_profit,
+      adjustedStrategy.max_profit * contract_multiplier,
+      adjustedStrategy.max_loss * contract_multiplier,
+      finalContracts,
+      numLegs
+    );
+  }
+
+  // Calculate Kelly criterion (using adjusted risk/reward)
   const kellyFraction = calculateKellyCriterion(
     strategy.probability_profit,
-    strategy.risk_reward
+    adjustedStrategy.risk_reward_ratio
   );
 
   return {
@@ -79,7 +111,19 @@ export function calculatePositionSize(strategy, accountSize, riskConfig = {}) {
       risk_based: contractsBasedOnRisk,
       concentration_based: contractsBasedOnConcentration,
       limiting_factor: contractsBasedOnRisk < contractsBasedOnConcentration ? 'risk' : 'concentration'
-    }
+    },
+    // Transaction cost details
+    transaction_costs_included: includeCosts,
+    transaction_costs_per_contract: transactionCosts,
+    total_transaction_costs: parseFloat(totalTransactionCosts.toFixed(2)),
+    true_expected_value: trueEV,
+    // Show both original and adjusted values
+    original_max_profit: strategy.max_profit ? parseFloat((strategy.max_profit * finalContracts * contract_multiplier).toFixed(2)) : null,
+    original_max_loss: strategy.max_loss ? parseFloat((strategy.max_loss * finalContracts * contract_multiplier).toFixed(2)) : null,
+    profit_after_costs: includeCosts ? potentialProfit : null,
+    cost_impact_warning: includeCosts && transactionCosts && potentialProfit > 0 ?
+      transactionCosts / (potentialProfit / finalContracts / contract_multiplier) > 0.2 ?
+        'WARNING: Transaction costs exceed 20% of potential profit' : null : null
   };
 }
 
