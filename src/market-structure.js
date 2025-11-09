@@ -227,11 +227,11 @@ export function analyzeGammaExposure(chainData, spotPrice) {
   // Determine market regime
   let regime, interpretation;
   if (totalGEX > 0) {
-    regime = 'Negative Gamma';
-    interpretation = 'Dealers are short gamma - expect higher volatility and trending moves';
-  } else {
     regime = 'Positive Gamma';
     interpretation = 'Dealers are long gamma - expect mean reversion and volatility suppression';
+  } else {
+    regime = 'Negative Gamma';
+    interpretation = 'Dealers are short gamma - expect higher volatility and trending moves';
   }
   
   // Add support/resistance interpretation

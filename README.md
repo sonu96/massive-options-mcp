@@ -6,15 +6,17 @@ An MCP (Model Context Protocol) server that integrates Massive.com's Options API
 
 **Professional-Grade Options Analysis MCP Server**
 
-This comprehensive MCP server provides 17 tools designed to transform data into profitable trading decisions:
+This comprehensive MCP server provides 22 tools designed to transform data into profitable trading decisions:
 
-### Market Data & Analysis (9 tools)
+### Market Data & Analysis (14 tools)
 - **Core Data Access**: Real-time quotes with Greeks/IV, option chains, historical aggregates, symbol search
 - **Advanced Analytics**: Comprehensive single-option analysis with Black-Scholes probabilities, expected moves, break-even, leverage, and risk/reward calculations
 - **Market Structure Analysis**: Put/call ratios, gamma exposure (GEX), max pain, and open interest distribution
 - **Volatility Analysis**: IV smile/skew patterns, term structure, and pricing anomalies across strikes/expirations
 - **Dealer Positioning**: HeatSeeker-style GEX/VEX matrices showing where dealers dampen or amplify moves
 - **Deep Multi-Strategy Analysis**: All-in-one tool combining institutional flow detection, strategy generation, position sizing, and P&L scenarios
+- **Technical Indicators**: EMA and RSI for options contracts
+- **Market Status & Dividends**: Real-time market open/close status, upcoming holidays, and dividend data with advanced filtering
 
 ### Risk Management & Position Tracking (8 tools)
 - **Portfolio Greeks**: Aggregate delta, gamma, theta, vega across all positions with risk warnings
@@ -81,6 +83,14 @@ Once connected, you can ask Claude to:
 - "Show market structure for QQQ - put/call ratios, GEX, and max pain"
 - "Get dealer positioning matrix for IBIT with GEX and VEX"
 - "Run deep analysis on SPY with $10K account - find best strategies"
+- "Are markets open right now?" (uses get_market_status)
+- "What are the upcoming market holidays?" (uses get_upcoming_market_holidays)
+- "Show me AAPL dividends for 2024" (uses get_dividends)
+
+**Technical Analysis:**
+- "Get 20-day EMA for SPY 580 call expiring Jan 2026" (uses get_option_ema)
+- "Show RSI for TSLA 250 put expiring Dec 2025 - is it overbought?" (uses get_option_rsi)
+- "Calculate EMA crossover signals for this option" (uses get_option_ema)
 
 **Risk Management:**
 - "Calculate my portfolio Greeks across all positions"
@@ -96,7 +106,7 @@ Once connected, you can ask Claude to:
 - "Check if any positions hit profit targets or stop losses"
 - "Close my position XYZ with exit price $2.50"
 
-## Available Tools (17 Total)
+## Available Tools (22 Total)
 
 ### Market Data & Analysis Tools
 
@@ -201,6 +211,42 @@ Analyze option liquidity to ensure tradeable markets.
 - **Optional**: min_quality (EXCELLENT/GOOD/FAIR)
 - **Returns**: Liquidity score (0-100), quality rating, bid-ask spread %, warnings
 - **Thresholds**: EXCELLENT (<3% spread, 500+ volume), GOOD (<7% spread, 100+ volume), FAIR (<15% spread, 50+ volume)
+
+### 18. get_market_status
+Get current market status for all exchanges.
+- **Required**: None
+- **Returns**: Overall market status (open/closed), trading_allowed boolean, exchange-specific status for NYSE, NASDAQ, AMEX, etc.
+- **Use for**: Checking if markets are open before placing trades, understanding after-hours status
+
+### 19. get_upcoming_market_holidays
+Get list of upcoming market holidays and closures.
+- **Required**: None
+- **Returns**: Array of upcoming holidays with dates and descriptions
+- **Use for**: Planning trades around market closures, avoiding expiration dates on holidays
+
+### 20. get_dividends
+Get dividend data with comprehensive filtering and sorting.
+- **Required**: None (all parameters optional)
+- **Optional**: ticker, ex_dividend_date, record_date, declaration_date, pay_date, cash_amount, frequency, limit, sort, order
+- **Returns**: Dividend records with all date fields, cash amounts, and frequency
+- **Use for**: Dividend capture strategies, ex-dividend date analysis, income planning
+- **Note**: All filter parameters (record_date, declaration_date, pay_date, etc.) are fully exposed and functional
+
+### 21. get_option_ema
+Get Exponential Moving Average (EMA) technical indicator for an option.
+- **Required**: symbol, optionType (call/put), strike, expiration
+- **Optional**: timespan (minute/hour/day/week/month, default: day), window (default: 20)
+- **Returns**: EMA values over time, ticker, indicator metadata
+- **Use for**: Identifying trend direction, potential entry/exit points, crossover strategies
+- **Common windows**: 9 (short-term), 20 (medium-term), 50/200 (long-term)
+
+### 22. get_option_rsi
+Get Relative Strength Index (RSI) technical indicator for an option.
+- **Required**: symbol, optionType (call/put), strike, expiration
+- **Optional**: timespan (minute/hour/day/week/month, default: day), window (default: 14)
+- **Returns**: RSI values over time, automatic interpretation (overbought/oversold/neutral)
+- **Use for**: Identifying overbought (>70) or oversold (<30) conditions, momentum analysis
+- **Interpretation**: >70 = overbought (potential reversal), <30 = oversold (potential bounce), 30-70 = neutral
 
 ## Advanced Analytics Documentation
 

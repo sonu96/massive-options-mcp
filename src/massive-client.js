@@ -121,14 +121,18 @@ export class MassiveOptionsClient {
       // Get underlying stock price
       let underlyingPrice = null;
       try {
-        const stockResponse = await this.client.get(`/v2/aggs/ticker/${symbol}/prev`);
+        const stockResponse = await axios.get(`https://api.massive.com/v2/aggs/ticker/${symbol}/prev`, {
+          params: { apiKey: this.apiKey }
+        });
         if (stockResponse.data.results && stockResponse.data.results.length > 0) {
           underlyingPrice = stockResponse.data.results[0].c; // closing price
         }
       } catch (stockError) {
         // Try alternative endpoint
         try {
-          const altResponse = await this.client.get(`/v3/quotes/${symbol}`);
+          const altResponse = await axios.get(`https://api.massive.com/v3/quotes/${symbol}`, {
+            params: { apiKey: this.apiKey }
+          });
           if (altResponse.data.results && altResponse.data.results.length > 0) {
             underlyingPrice = altResponse.data.results[0].ask_price || altResponse.data.results[0].bid_price;
           }
@@ -1198,6 +1202,11 @@ export class MassiveOptionsClient {
         }
       );
 
+      // Guard against empty strike set
+      if (!strikes || strikes.length === 0) {
+        throw new Error('No contracts in the requested strike range. Try widening the strike_range or removing filters.');
+      }
+
       // Identify key levels
       const keyLevels = identifyKeyLevels(gexMatrix, strikes, underlyingPrice);
 
@@ -1211,12 +1220,15 @@ export class MassiveOptionsClient {
       // Generate trading implications
       const tradingImplications = generateTradingImplications(keyLevels, underlyingPrice);
 
+      // Get the actually processed expirations (keys of filteredData)
+      const actualExpirations = Object.keys(filteredData).sort();
+
       // Format output
       const result = {
         symbol: symbol,
         current_price: underlyingPrice,
         analysis_time: new Date().toISOString(),
-        expirations: targetExpirations,
+        expirations: actualExpirations, // Only include expirations that were actually processed
         strike_range: {
           min: Math.min(...strikes),
           max: Math.max(...strikes),
@@ -1275,6 +1287,262 @@ export class MassiveOptionsClient {
 
     } catch (error) {
       throw new Error(`Failed to get dealer positioning matrix: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get current market status for various exchanges
+   * @returns {Object} Market status with exchange-specific information
+   */
+  async getMarketStatus() {
+    try {
+      console.error('Fetching market status...');
+
+      // Call the /v1/marketstatus/now endpoint
+      const response = await axios.get('https://api.massive.com/v1/marketstatus/now', {
+        params: { apiKey: this.apiKey }
+      });
+
+      // The API returns a single object with an exchanges field that is a keyed map
+      // e.g., { market: "market", serverTime: "...", exchanges: { nyse: {...}, nasdaq: {...} } }
+
+      if (!response.data || !response.data.exchanges) {
+        throw new Error('Invalid market status response - missing exchanges data');
+      }
+
+      const marketData = response.data;
+      const exchangesMap = marketData.exchanges;
+
+      // Parse each exchange from the keyed map
+      const marketStatus = [];
+      for (const [exchangeKey, exchangeData] of Object.entries(exchangesMap)) {
+        marketStatus.push({
+          exchange: exchangeKey,
+          market: exchangeData.market || marketData.market,
+          status: exchangeData.status || 'unknown',
+          serverTime: marketData.serverTime,
+          afterHours: exchangeData.afterHours || false,
+          earlyHours: exchangeData.earlyHours || false
+        });
+      }
+
+      // Determine overall status based on major exchanges
+      const majorExchanges = ['nyse', 'nasdaq', 'amex'];
+      const openExchanges = marketStatus.filter(ex =>
+        majorExchanges.includes(ex.exchange) && ex.status === 'open'
+      );
+
+      const overall_status = openExchanges.length > 0 ? 'Markets Open' : 'Markets Closed';
+      const trading_allowed = openExchanges.length > 0;
+
+      const result = {
+        market: marketData.market,
+        serverTime: marketData.serverTime,
+        overall_status,
+        trading_allowed,
+        exchanges: marketStatus
+      };
+
+      // Only warn if markets are actually closed
+      if (!trading_allowed) {
+        console.error('Warning: Markets are currently closed. Trading may not be available.');
+      }
+
+      return result;
+
+    } catch (error) {
+      throw new Error(`Failed to get market status: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get upcoming market holidays
+   * @returns {Object} List of upcoming market holidays
+   */
+  async getUpcomingMarketHolidays() {
+    try {
+      console.error('Fetching upcoming market holidays...');
+
+      const response = await axios.get('https://api.massive.com/v1/marketstatus/upcoming', {
+        params: { apiKey: this.apiKey }
+      });
+
+      return {
+        holidays: response.data || [],
+        fetched_at: new Date().toISOString()
+      };
+
+    } catch (error) {
+      throw new Error(`Failed to get upcoming market holidays: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get dividends with comprehensive filtering and sorting options
+   * @param {Object} params - Filter parameters
+   * @returns {Object} Dividend data
+   */
+  async getDividends(params = {}) {
+    try {
+      const {
+        ticker,
+        ex_dividend_date,
+        record_date,
+        declaration_date,
+        pay_date,
+        cash_amount,
+        frequency,
+        limit = 100,
+        sort = 'ex_dividend_date',
+        order = 'desc'
+      } = params;
+
+      console.error('Fetching dividends...');
+
+      // Build query parameters
+      const queryParams = {
+        apiKey: this.apiKey,
+        limit
+      };
+
+      // Add all optional filters
+      if (ticker) queryParams.ticker = ticker;
+      if (ex_dividend_date) queryParams.ex_dividend_date = ex_dividend_date;
+      if (record_date) queryParams.record_date = record_date;
+      if (declaration_date) queryParams.declaration_date = declaration_date;
+      if (pay_date) queryParams.pay_date = pay_date;
+      if (cash_amount) queryParams.cash_amount = cash_amount;
+      if (frequency) queryParams.frequency = frequency;
+      if (sort) queryParams.sort = sort;
+      if (order) queryParams.order = order;
+
+      const response = await axios.get('https://api.massive.com/v3/reference/dividends', {
+        params: queryParams
+      });
+
+      return {
+        results: response.data.results || [],
+        count: response.data.count || 0,
+        status: response.data.status,
+        fetched_at: new Date().toISOString()
+      };
+
+    } catch (error) {
+      throw new Error(`Failed to get dividends: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get Exponential Moving Average (EMA) for an option
+   * @param {string} symbol - Stock ticker symbol
+   * @param {string} optionType - 'call' or 'put'
+   * @param {number} strike - Strike price
+   * @param {string} expiration - Expiration date YYYY-MM-DD
+   * @param {number} timespan - Timespan (e.g., 'day', 'hour')
+   * @param {number} window - EMA window size (e.g., 9, 20, 50)
+   * @returns {Object} EMA data
+   */
+  async getOptionEMA(symbol, optionType, strike, expiration, timespan = 'day', window = 20) {
+    try {
+      // Get the option ticker first
+      const ticker = await this.getOptionTicker(symbol, optionType, strike, expiration);
+
+      console.error(`Fetching EMA for ${ticker}...`);
+
+      const response = await axios.get(`https://api.massive.com/v1/indicators/ema/${ticker}`, {
+        params: {
+          apiKey: this.apiKey,
+          timespan,
+          window,
+          series_type: 'close',
+          order: 'desc',
+          limit: 120
+        }
+      });
+
+      return {
+        ticker,
+        underlying: symbol,
+        contract_type: optionType,
+        strike,
+        expiration,
+        indicator: 'EMA',
+        timespan,
+        window,
+        results: response.data.results || [],
+        fetched_at: new Date().toISOString()
+      };
+
+    } catch (error) {
+      throw new Error(`Failed to get option EMA: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get Relative Strength Index (RSI) for an option
+   * @param {string} symbol - Stock ticker symbol
+   * @param {string} optionType - 'call' or 'put'
+   * @param {number} strike - Strike price
+   * @param {string} expiration - Expiration date YYYY-MM-DD
+   * @param {number} timespan - Timespan (e.g., 'day', 'hour')
+   * @param {number} window - RSI window size (typically 14)
+   * @returns {Object} RSI data
+   */
+  async getOptionRSI(symbol, optionType, strike, expiration, timespan = 'day', window = 14) {
+    try {
+      // Get the option ticker first
+      const ticker = await this.getOptionTicker(symbol, optionType, strike, expiration);
+
+      console.error(`Fetching RSI for ${ticker}...`);
+
+      const response = await axios.get(`https://api.massive.com/v1/indicators/rsi/${ticker}`, {
+        params: {
+          apiKey: this.apiKey,
+          timespan,
+          window,
+          series_type: 'close',
+          order: 'desc',
+          limit: 120
+        }
+      });
+
+      return {
+        ticker,
+        underlying: symbol,
+        contract_type: optionType,
+        strike,
+        expiration,
+        indicator: 'RSI',
+        timespan,
+        window,
+        results: response.data.results || [],
+        interpretation: this.interpretRSI(response.data.results),
+        fetched_at: new Date().toISOString()
+      };
+
+    } catch (error) {
+      throw new Error(`Failed to get option RSI: ${error.message}`);
+    }
+  }
+
+  /**
+   * Helper to interpret RSI values
+   * @private
+   */
+  interpretRSI(results) {
+    if (!results || results.length === 0) {
+      return 'No data available';
+    }
+
+    const latestRSI = results[0]?.value;
+    if (!latestRSI) return 'No RSI value available';
+
+    if (latestRSI > 70) {
+      return `Overbought (RSI: ${latestRSI.toFixed(2)}) - Potential reversal or pullback`;
+    } else if (latestRSI < 30) {
+      return `Oversold (RSI: ${latestRSI.toFixed(2)}) - Potential bounce or rally`;
+    } else {
+      return `Neutral (RSI: ${latestRSI.toFixed(2)}) - No extreme conditions`;
     }
   }
 }
