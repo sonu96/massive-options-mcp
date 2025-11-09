@@ -6,7 +6,7 @@ An MCP (Model Context Protocol) server that integrates Massive.com's Options API
 
 **Professional-Grade Options Analysis MCP Server**
 
-This comprehensive MCP server provides 17 tools designed to transform data into profitable trading decisions:
+This comprehensive MCP server provides 22 tools designed to transform data into profitable trading decisions:
 
 ### Market Data & Analysis (9 tools)
 - **Core Data Access**: Real-time quotes with Greeks/IV, option chains, historical aggregates, symbol search
@@ -25,6 +25,13 @@ This comprehensive MCP server provides 17 tools designed to transform data into 
 - **Liquidity Analysis**: Filter options by liquidity score to ensure tradeable markets
 - **Transaction Cost Modeling**: Real P&L calculations including commissions, slippage, and spreads
 - **Position Sizing**: Kelly criterion-based sizing with true expected value after costs
+
+### Technical Indicators & Market Information (5 tools)
+- **Technical Indicators**: EMA and RSI for option contracts to identify trends, momentum, and overbought/oversold conditions
+- **Market Status**: Check if markets are currently open or closed, including extended hours information
+- **Market Holidays**: View upcoming market holidays and early close days to plan around expiration dates
+- **Dividend Data**: Get dividend information with options-specific implications including early assignment risk warnings
+- **Options Impact Analysis**: Automatic alerts for dividends within 30 days affecting option pricing
 
 ## Setup
 
@@ -90,13 +97,21 @@ Once connected, you can ask Claude to:
 - "Detect unusual institutional flow in IBIT options"
 - "Check liquidity for this option - is the spread too wide?"
 
+**Technical Indicators & Market Info:**
+- "Get the 50-day EMA for SPY 580 call expiring Jan 2026 - is the trend up or down?"
+- "Show RSI for AAPL 180 call - is it overbought or oversold?"
+- "Are the markets open right now? Can I place trades?"
+- "When is the next market holiday? Will it affect my December options expiration?"
+- "Get dividend info for AAPL - any upcoming ex-div dates I should worry about?"
+- "Check if TSLA has a dividend coming up before my options expire"
+
 **Position Tracking:**
 - "Track this new position: SPY bull call spread, 580/590 strikes, Jan 2026"
 - "Show all my open positions with current P&L"
 - "Check if any positions hit profit targets or stop losses"
 - "Close my position XYZ with exit price $2.50"
 
-## Available Tools (17 Total)
+## Available Tools (22 Total)
 
 ### Market Data & Analysis Tools
 
@@ -201,6 +216,50 @@ Analyze option liquidity to ensure tradeable markets.
 - **Optional**: min_quality (EXCELLENT/GOOD/FAIR)
 - **Returns**: Liquidity score (0-100), quality rating, bid-ask spread %, warnings
 - **Thresholds**: EXCELLENT (<3% spread, 500+ volume), GOOD (<7% spread, 100+ volume), FAIR (<15% spread, 50+ volume)
+
+### Technical Indicators & Market Information Tools
+
+### 18. get_option_ema
+Get Exponential Moving Average for an option contract to identify trends and momentum.
+- **Required**: symbol, optionType, strike, expiration
+- **Optional**: timespan (day/hour/minute), window (default: 50), series_type (close/open/high/low), limit (default: 10), adjusted (default: true)
+- **Returns**: EMA values over time with timestamps
+- **Common windows**: 10 (short-term), 50 (medium-term), 200 (long-term)
+- **Use for**: Trend identification, momentum confirmation, entry/exit timing
+
+### 19. get_option_rsi
+Get Relative Strength Index for an option contract to identify overbought/oversold conditions.
+- **Required**: symbol, optionType, strike, expiration
+- **Optional**: timespan (day/hour/minute), window (default: 14), series_type (close/open/high/low), limit (default: 10), adjusted (default: true)
+- **Returns**: RSI values (0-100) with interpretation and trading signals
+- **Signals**: >70 = Overbought (consider selling), <30 = Oversold (potential buy)
+- **Use for**: Timing entries/exits, identifying reversals, momentum analysis
+
+### 20. get_market_status
+Get current market trading status for all exchanges.
+- **Required**: None
+- **Returns**: Market open/closed status, extended hours info, trading allowed flag, warnings
+- **Use for**: Checking if markets are open before placing trades, risk management
+- **Important**: Markets closed = no trading, Extended hours = limited liquidity
+
+### 21. get_upcoming_market_holidays
+Get upcoming market holidays and early close days.
+- **Required**: None
+- **Returns**: Holiday dates, early close times, full closure dates, market hours
+- **Use for**: Planning trades around holidays, avoiding options expiring on market holidays
+- **Critical**: Options expiring on holidays may have different settlement rules
+
+### 22. get_dividends
+Get dividend information with options trading implications.
+- **Required**: None (or ticker for specific stock)
+- **Optional**: ticker, ex_dividend_date, limit (default: 100), frequency (0/1/2/4/12)
+- **Returns**: Dividend amounts, ex-div dates, pay dates, options implications
+- **CRITICAL for Options**:
+  - Dividends affect option pricing
+  - ITM calls face early assignment risk near ex-div date
+  - Put intrinsic value increases by dividend amount on ex-div
+  - Shows warning if ex-div within 30 days
+- **Frequency codes**: 0=one-time, 1=annual, 2=semi-annual, 4=quarterly, 12=monthly
 
 ## Advanced Analytics Documentation
 

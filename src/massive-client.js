@@ -1277,4 +1277,378 @@ export class MassiveOptionsClient {
       throw new Error(`Failed to get dealer positioning matrix: ${error.message}`);
     }
   }
+
+  /**
+   * Get Exponential Moving Average (EMA) for an option contract
+   * @param {Object} params - EMA parameters
+   * @returns {Object} EMA data with values and timestamps
+   */
+  async getOptionEMA(params) {
+    const {
+      symbol,
+      optionType,
+      strike,
+      expiration,
+      timespan = 'day', // day, hour, minute
+      window = 50, // EMA window (10, 20, 50, 200 common)
+      series_type = 'close', // close, open, high, low
+      limit = 10,
+      adjusted = true
+    } = params;
+
+    try {
+      // Get the option ticker
+      const ticker = await this.getOptionTicker(symbol, optionType, strike, expiration);
+
+      // Call the EMA endpoint
+      const response = await axios.get(`https://api.massive.com/v1/indicators/ema/${ticker}`, {
+        params: {
+          timespan,
+          adjusted: adjusted.toString(),
+          window,
+          series_type,
+          order: 'desc',
+          limit,
+          apiKey: this.apiKey
+        }
+      });
+
+      if (!response.data.results || !response.data.results.values) {
+        throw new Error('No EMA data available for this option');
+      }
+
+      return {
+        ticker: ticker,
+        underlying: symbol,
+        contract_type: optionType,
+        strike: strike,
+        expiration: expiration,
+        indicator: 'EMA',
+        parameters: {
+          window: window,
+          timespan: timespan,
+          series_type: series_type,
+          adjusted: adjusted
+        },
+        results: response.data.results.values.map(item => ({
+          timestamp: new Date(item.timestamp).toISOString(),
+          value: item.value
+        })),
+        next_url: response.data.next_url || null,
+        status: response.data.status
+      };
+
+    } catch (error) {
+      if (error.response?.status === 404) {
+        throw new Error('EMA data not available for this option contract. The option may be too illiquid or recently listed.');
+      }
+      throw new Error(`Failed to get option EMA: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get Relative Strength Index (RSI) for an option contract
+   * @param {Object} params - RSI parameters
+   * @returns {Object} RSI data with values and timestamps
+   */
+  async getOptionRSI(params) {
+    const {
+      symbol,
+      optionType,
+      strike,
+      expiration,
+      timespan = 'day', // day, hour, minute
+      window = 14, // RSI window (typically 14)
+      series_type = 'close', // close, open, high, low
+      limit = 10,
+      adjusted = true
+    } = params;
+
+    try {
+      // Get the option ticker
+      const ticker = await this.getOptionTicker(symbol, optionType, strike, expiration);
+
+      // Call the RSI endpoint
+      const response = await axios.get(`https://api.massive.com/v1/indicators/rsi/${ticker}`, {
+        params: {
+          timespan,
+          adjusted: adjusted.toString(),
+          window,
+          series_type,
+          order: 'desc',
+          limit,
+          apiKey: this.apiKey
+        }
+      });
+
+      if (!response.data.results || !response.data.results.values) {
+        throw new Error('No RSI data available for this option');
+      }
+
+      const values = response.data.results.values.map(item => ({
+        timestamp: new Date(item.timestamp).toISOString(),
+        value: item.value
+      }));
+
+      // Analyze RSI levels
+      const latestRSI = values[0]?.value;
+      let signal = 'Neutral';
+      if (latestRSI >= 70) {
+        signal = 'Overbought - Consider selling or taking profits';
+      } else if (latestRSI <= 30) {
+        signal = 'Oversold - Potential buying opportunity';
+      }
+
+      return {
+        ticker: ticker,
+        underlying: symbol,
+        contract_type: optionType,
+        strike: strike,
+        expiration: expiration,
+        indicator: 'RSI',
+        parameters: {
+          window: window,
+          timespan: timespan,
+          series_type: series_type,
+          adjusted: adjusted
+        },
+        current_rsi: latestRSI,
+        signal: signal,
+        interpretation: {
+          overbought_threshold: 70,
+          oversold_threshold: 30,
+          current_status: latestRSI >= 70 ? 'Overbought' : latestRSI <= 30 ? 'Oversold' : 'Neutral'
+        },
+        results: values,
+        next_url: response.data.next_url || null,
+        status: response.data.status
+      };
+
+    } catch (error) {
+      if (error.response?.status === 404) {
+        throw new Error('RSI data not available for this option contract. The option may be too illiquid or recently listed.');
+      }
+      throw new Error(`Failed to get option RSI: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get current market trading status
+   * @returns {Object} Current market status for all exchanges
+   */
+  async getMarketStatus() {
+    try {
+      const response = await axios.get('https://api.massive.com/v1/marketstatus/now', {
+        params: { apiKey: this.apiKey }
+      });
+
+      if (!response.data) {
+        throw new Error('No market status data available');
+      }
+
+      // Process market status for each exchange
+      const markets = response.data.exchanges || response.data;
+      const marketStatus = Array.isArray(markets) ? markets : [markets];
+
+      const summary = {
+        timestamp: new Date().toISOString(),
+        overall_status: marketStatus.every(m => m.market === 'open') ? 'Markets Open' : 'Markets Closed',
+        markets: marketStatus.map(exchange => ({
+          exchange: exchange.exchange || exchange.name || 'Unknown',
+          market: exchange.market || exchange.status,
+          server_time: exchange.serverTime ? new Date(exchange.serverTime).toISOString() : null,
+          local_open: exchange.local_open || null,
+          local_close: exchange.local_close || null,
+          currencies: exchange.currencies || null
+        })),
+        trading_allowed: marketStatus.some(m => m.market === 'open'),
+        after_hours: marketStatus.some(m => m.market === 'extended-hours'),
+        warnings: []
+      };
+
+      // Add warnings for closed markets
+      if (!summary.trading_allowed) {
+        summary.warnings.push('Markets are currently closed. Regular trading hours are 9:30 AM - 4:00 PM ET.');
+      }
+
+      if (summary.after_hours) {
+        summary.warnings.push('Extended hours trading is active. Liquidity may be limited.');
+      }
+
+      return summary;
+
+    } catch (error) {
+      throw new Error(`Failed to get market status: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get upcoming market holidays and special hours
+   * @returns {Object} Upcoming market holidays and early close days
+   */
+  async getUpcomingMarketHolidays() {
+    try {
+      const response = await axios.get('https://api.massive.com/v1/marketstatus/upcoming', {
+        params: { apiKey: this.apiKey }
+      });
+
+      if (!response.data) {
+        throw new Error('No market holiday data available');
+      }
+
+      const holidays = Array.isArray(response.data) ? response.data : [response.data];
+
+      return {
+        timestamp: new Date().toISOString(),
+        total_events: holidays.length,
+        upcoming_events: holidays.map(event => ({
+          date: event.date,
+          exchange: event.exchange || 'NYSE',
+          name: event.name || event.holiday || 'Market Holiday',
+          status: event.status || event.market,
+          open: event.open || null,
+          close: event.close || null,
+          early_close: event.status === 'early-close' || (event.close && event.close !== '16:00'),
+          full_closure: event.status === 'closed' || event.market === 'closed',
+          notes: event.status === 'early-close' ? `Market closes early at ${event.close}` :
+                 event.status === 'closed' ? 'Market fully closed' : null
+        })),
+        next_full_closure: holidays.find(h => h.status === 'closed' || h.market === 'closed'),
+        next_early_close: holidays.find(h => h.status === 'early-close')
+      };
+
+    } catch (error) {
+      throw new Error(`Failed to get upcoming market holidays: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get dividend information for a stock
+   * @param {Object} params - Dividend query parameters
+   * @returns {Object} Dividend data including upcoming and historical dividends
+   */
+  async getDividends(params = {}) {
+    const {
+      ticker = null,
+      ex_dividend_date = null, // Filter by ex-dividend date
+      record_date = null,
+      declaration_date = null,
+      pay_date = null,
+      frequency = null, // 0=one-time, 1=annual, 2=bi-annual, 4=quarterly, 12=monthly
+      cash_amount = null,
+      limit = 100,
+      sort = 'ex_dividend_date',
+      order = 'desc'
+    } = params;
+
+    try {
+      const queryParams = {
+        apiKey: this.apiKey,
+        limit,
+        sort,
+        order
+      };
+
+      // Add optional filters
+      if (ticker) queryParams.ticker = ticker;
+      if (ex_dividend_date) queryParams.ex_dividend_date = ex_dividend_date;
+      if (record_date) queryParams.record_date = record_date;
+      if (declaration_date) queryParams.declaration_date = declaration_date;
+      if (pay_date) queryParams.pay_date = pay_date;
+      if (frequency !== null) queryParams.frequency = frequency;
+      if (cash_amount !== null) queryParams.cash_amount = cash_amount;
+
+      const response = await axios.get('https://api.massive.com/v3/reference/dividends', {
+        params: queryParams
+      });
+
+      if (!response.data.results) {
+        return {
+          ticker: ticker || 'All',
+          total_results: 0,
+          dividends: [],
+          next_dividend: null
+        };
+      }
+
+      const dividends = response.data.results.map(div => ({
+        ticker: div.ticker,
+        cash_amount: div.cash_amount,
+        currency: div.currency || 'USD',
+        declaration_date: div.declaration_date,
+        ex_dividend_date: div.ex_dividend_date,
+        pay_date: div.pay_date,
+        record_date: div.record_date,
+        frequency: div.frequency,
+        frequency_name: this.getDividendFrequencyName(div.frequency),
+        dividend_type: div.dividend_type,
+        days_until_ex_div: this.calculateDaysUntil(div.ex_dividend_date),
+        days_until_payment: this.calculateDaysUntil(div.pay_date)
+      }));
+
+      // Find next upcoming dividend for this ticker
+      const upcoming = dividends.filter(d =>
+        new Date(d.ex_dividend_date) > new Date()
+      ).sort((a, b) =>
+        new Date(a.ex_dividend_date) - new Date(b.ex_dividend_date)
+      );
+
+      const result = {
+        ticker: ticker || 'All',
+        total_results: dividends.length,
+        dividends: dividends,
+        next_dividend: upcoming.length > 0 ? upcoming[0] : null,
+        status: response.data.status,
+        request_id: response.data.request_id
+      };
+
+      // Add options trading implications if we have an upcoming dividend
+      if (ticker && result.next_dividend && result.next_dividend.days_until_ex_div <= 30) {
+        result.options_implications = {
+          warning: 'Upcoming ex-dividend date affects option pricing',
+          ex_div_date: result.next_dividend.ex_dividend_date,
+          days_until: result.next_dividend.days_until_ex_div,
+          dividend_amount: result.next_dividend.cash_amount,
+          impact: {
+            call_options: 'May experience early assignment risk if deep ITM',
+            put_options: 'Intrinsic value increases by dividend amount on ex-div date',
+            strategy: result.next_dividend.days_until_ex_div <= 7 ?
+              'CRITICAL: Ex-div date within 7 days - high early assignment risk for ITM calls' :
+              'Monitor positions closely as ex-div date approaches'
+          }
+        };
+      }
+
+      return result;
+
+    } catch (error) {
+      throw new Error(`Failed to get dividend data: ${error.message}`);
+    }
+  }
+
+  /**
+   * Helper method to get dividend frequency name
+   */
+  getDividendFrequencyName(frequency) {
+    const frequencies = {
+      0: 'One-Time',
+      1: 'Annual',
+      2: 'Semi-Annual',
+      4: 'Quarterly',
+      12: 'Monthly'
+    };
+    return frequencies[frequency] || 'Unknown';
+  }
+
+  /**
+   * Helper method to calculate days until a date
+   */
+  calculateDaysUntil(dateString) {
+    if (!dateString) return null;
+    const targetDate = new Date(dateString);
+    const today = new Date();
+    const diffTime = targetDate - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  }
 }
