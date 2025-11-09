@@ -572,6 +572,155 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           additionalProperties: false
         }
+      },
+      {
+        name: 'get_market_status',
+        description: 'Get current market status for all exchanges including NYSE, NASDAQ, AMEX. Shows whether markets are open or closed, after hours status, and overall trading availability.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'get_upcoming_market_holidays',
+        description: 'Get list of upcoming market holidays and closures. Useful for planning trades and understanding when markets will be closed.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'get_dividends',
+        description: 'Get dividend data with comprehensive filtering and sorting options. Filter by ticker, dates (ex-dividend, record, declaration, pay), cash amount, and frequency. Results can be sorted by any field.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            ticker: {
+              type: 'string',
+              description: 'Stock ticker symbol to filter by (e.g., "AAPL")'
+            },
+            ex_dividend_date: {
+              type: 'string',
+              pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+              description: 'Filter by ex-dividend date in YYYY-MM-DD format'
+            },
+            record_date: {
+              type: 'string',
+              pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+              description: 'Filter by record date in YYYY-MM-DD format'
+            },
+            declaration_date: {
+              type: 'string',
+              pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+              description: 'Filter by declaration date in YYYY-MM-DD format'
+            },
+            pay_date: {
+              type: 'string',
+              pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+              description: 'Filter by payment date in YYYY-MM-DD format'
+            },
+            cash_amount: {
+              type: 'number',
+              description: 'Filter by dividend cash amount'
+            },
+            frequency: {
+              type: 'number',
+              description: 'Filter by dividend frequency (e.g., 1=annual, 4=quarterly, 12=monthly)'
+            },
+            limit: {
+              type: 'number',
+              description: 'Maximum number of results to return (default: 100)'
+            },
+            sort: {
+              type: 'string',
+              description: 'Field to sort by (default: ex_dividend_date). Options: ticker, ex_dividend_date, record_date, declaration_date, pay_date, cash_amount'
+            },
+            order: {
+              type: 'string',
+              enum: ['asc', 'desc'],
+              description: 'Sort order: ascending or descending (default: desc)'
+            }
+          },
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'get_option_ema',
+        description: 'Get Exponential Moving Average (EMA) technical indicator for an option contract. EMA is a trend-following indicator that gives more weight to recent prices. Useful for identifying trend direction and potential entry/exit points.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            symbol: {
+              type: 'string',
+              description: 'Stock ticker symbol in uppercase (e.g., "AAPL")'
+            },
+            optionType: {
+              type: 'string',
+              enum: ['call', 'put'],
+              description: 'Option type: "call" or "put"'
+            },
+            strike: {
+              type: 'number',
+              description: 'Strike price'
+            },
+            expiration: {
+              type: 'string',
+              pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+              description: 'Expiration date in YYYY-MM-DD format'
+            },
+            timespan: {
+              type: 'string',
+              enum: ['minute', 'hour', 'day', 'week', 'month'],
+              description: 'Timespan for EMA calculation (default: day)'
+            },
+            window: {
+              type: 'number',
+              description: 'EMA window/period size (e.g., 9, 20, 50, 200). Default: 20'
+            }
+          },
+          required: ['symbol', 'optionType', 'strike', 'expiration'],
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'get_option_rsi',
+        description: 'Get Relative Strength Index (RSI) technical indicator for an option contract. RSI measures momentum and identifies overbought (>70) or oversold (<30) conditions. Includes automatic interpretation of RSI levels.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            symbol: {
+              type: 'string',
+              description: 'Stock ticker symbol in uppercase (e.g., "AAPL")'
+            },
+            optionType: {
+              type: 'string',
+              enum: ['call', 'put'],
+              description: 'Option type: "call" or "put"'
+            },
+            strike: {
+              type: 'number',
+              description: 'Strike price'
+            },
+            expiration: {
+              type: 'string',
+              pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+              description: 'Expiration date in YYYY-MM-DD format'
+            },
+            timespan: {
+              type: 'string',
+              enum: ['minute', 'hour', 'day', 'week', 'month'],
+              description: 'Timespan for RSI calculation (default: day)'
+            },
+            window: {
+              type: 'number',
+              description: 'RSI window/period size (typically 14). Default: 14'
+            }
+          },
+          required: ['symbol', 'optionType', 'strike', 'expiration'],
+          additionalProperties: false
+        }
       }
     ]
   };
@@ -857,6 +1006,56 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'get_market_status': {
+        const data = await client.getMarketStatus();
+        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+      }
+
+      case 'get_upcoming_market_holidays': {
+        const data = await client.getUpcomingMarketHolidays();
+        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+      }
+
+      case 'get_dividends': {
+        const data = await client.getDividends({
+          ticker: args.ticker,
+          ex_dividend_date: args.ex_dividend_date,
+          record_date: args.record_date,
+          declaration_date: args.declaration_date,
+          pay_date: args.pay_date,
+          cash_amount: args.cash_amount,
+          frequency: args.frequency,
+          limit: args.limit,
+          sort: args.sort,
+          order: args.order
+        });
+        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+      }
+
+      case 'get_option_ema': {
+        const data = await client.getOptionEMA(
+          args.symbol,
+          args.optionType,
+          args.strike,
+          args.expiration,
+          args.timespan || 'day',
+          args.window || 20
+        );
+        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+      }
+
+      case 'get_option_rsi': {
+        const data = await client.getOptionRSI(
+          args.symbol,
+          args.optionType,
+          args.strike,
+          args.expiration,
+          args.timespan || 'day',
+          args.window || 14
+        );
+        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
       }
 
       default:

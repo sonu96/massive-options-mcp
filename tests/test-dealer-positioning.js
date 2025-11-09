@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // Test script for get_dealer_positioning_matrix tool
-import { MassiveOptionsClient } from './src/massive-client.js';
+import { MassiveOptionsClient } from '../src/massive-client.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
