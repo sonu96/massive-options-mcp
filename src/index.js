@@ -349,6 +349,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               },
               description: 'Optional: Risk management configuration. All parameters have safe defaults if not provided'
             },
+            flow_config: {
+              type: 'object',
+              properties: {
+                min_volume: {
+                  type: 'number',
+                  description: 'Minimum volume to flag as unusual (default: 1000). Lower for low-float names, higher for mega-caps'
+                },
+                volume_oi_ratio: {
+                  type: 'number',
+                  description: 'Minimum volume/OI ratio to flag as unusual (default: 0.5). Detects high turnover relative to open interest'
+                },
+                high_volume_threshold: {
+                  type: 'number',
+                  description: 'High absolute volume threshold (default: 5000). Flags very high volume regardless of OI'
+                }
+              },
+              description: 'Optional: Configurable thresholds for unusual flow detection. Defaults work for most tickers, but can be tuned for low-float names or mega-caps'
+            },
             current_price: {
               type: 'number',
               description: 'Optional: Override current underlying price. If not provided, fetches from market data'
@@ -875,6 +893,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           mode: args.mode || 'both',
           strategies: args.strategies || ['bull_call_spread', 'bear_put_spread', 'iron_condor', 'calendar_spread'],
           risk_config: args.risk_config || {},
+          flow_config: args.flow_config || {},
           current_price: args.current_price
         });
         return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };

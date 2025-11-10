@@ -668,10 +668,10 @@ export class MassiveOptionsClient {
     }
   }
 
-  async getVolatilityAnalysis(symbol, expiration = null) {
+  async getVolatilityAnalysis(symbol, expiration = null, snapshot = null) {
     try {
-      // Get option chain snapshot
-      const chainData = await this.getOptionChainSnapshot(symbol, expiration);
+      // Get option chain snapshot (reuse if provided)
+      const chainData = snapshot || await this.getOptionChainSnapshot(symbol, expiration);
       
       if (!chainData || !chainData.data) {
         throw new Error('No option chain data available');
@@ -752,10 +752,10 @@ export class MassiveOptionsClient {
     }
   }
 
-  async getMarketStructure(symbol, expiration = null) {
+  async getMarketStructure(symbol, expiration = null, snapshot = null) {
     try {
-      // Get option chain snapshot
-      const chainData = await this.getOptionChainSnapshot(symbol, expiration);
+      // Get option chain snapshot (reuse if provided)
+      const chainData = snapshot || await this.getOptionChainSnapshot(symbol, expiration);
       
       if (!chainData || !chainData.data) {
         throw new Error('No option chain data available');
@@ -844,7 +844,8 @@ export class MassiveOptionsClient {
       mode = 'both', // 'manual', 'auto', or 'both'
       strategies = ['bull_call_spread', 'bear_put_spread', 'iron_condor', 'calendar_spread'],
       risk_config = {},
-      current_price = null
+      current_price = null,
+      flow_config = {} // Configurable unusual flow detection thresholds
     } = params;
 
     // Validate and sanitize risk configuration
@@ -881,20 +882,34 @@ export class MassiveOptionsClient {
       }
 
       // Step 2: Analyze target expirations (or all if not specified)
-      const expirationsToAnalyze = target_expirations.length > 0 ?
+      const requestedExpirations = target_expirations.length > 0 ?
         target_expirations :
         snapshot.expirations.slice(0, 4); // Analyze first 4 expirations
+
+      // Validate that requested expirations exist in snapshot
+      const availableExpirations = new Set(snapshot.expirations);
+      const expirationsToAnalyze = requestedExpirations.filter(exp => availableExpirations.has(exp));
+      const missingExpirations = requestedExpirations.filter(exp => !availableExpirations.has(exp));
+
+      if (missingExpirations.length > 0) {
+        console.error(`⚠️  Warning: ${missingExpirations.length} requested expirations not found: ${missingExpirations.join(', ')}`);
+      }
+
+      if (expirationsToAnalyze.length === 0) {
+        throw new Error(`None of the requested expirations exist. Available: ${snapshot.expirations.join(', ')}`);
+      }
 
       console.error(`Step 2: Analyzing ${expirationsToAnalyze.length} expirations...`);
 
       // Step 3: Get market structure and volatility for each expiration
+      // OPTIMIZATION: Reuse the already-fetched snapshot to avoid redundant API calls
       for (const expiration of expirationsToAnalyze) {
         try {
-          // Get market structure
-          const marketStructure = await this.getMarketStructure(symbol, expiration);
+          // Get market structure (reusing snapshot)
+          const marketStructure = await this.getMarketStructure(symbol, expiration, snapshot);
 
-          // Get volatility analysis
-          const volAnalysis = await this.getVolatilityAnalysis(symbol, expiration);
+          // Get volatility analysis (reusing snapshot)
+          const volAnalysis = await this.getVolatilityAnalysis(symbol, expiration, snapshot);
 
           analysis.volatility_analysis[expiration] = {
             smile: volAnalysis.smile_analysis[expiration],
@@ -936,6 +951,15 @@ export class MassiveOptionsClient {
 
       // Step 4: Detect unusual activity (volume spikes)
       console.error('Step 4: Detecting unusual activity...');
+
+      // Configurable thresholds (with defaults)
+      const flowThresholds = {
+        min_volume: flow_config.min_volume || 1000,
+        volume_oi_ratio: flow_config.volume_oi_ratio || 0.5,
+        high_volume_threshold: flow_config.high_volume_threshold || 5000,
+        ...flow_config
+      };
+
       const unusualStrikes = new Set();
 
       for (const expiration of expirationsToAnalyze) {
@@ -950,7 +974,9 @@ export class MassiveOptionsClient {
           // Flag unusual activity: high volume relative to OI, or very high absolute volume
           const volumeOIRatio = oi > 0 ? volume / oi : 0;
 
-          if (volume > 1000 && (volumeOIRatio > 0.5 || volume > 5000)) {
+          if (volume > flowThresholds.min_volume &&
+              (volumeOIRatio > flowThresholds.volume_oi_ratio ||
+               volume > flowThresholds.high_volume_threshold)) {
             analysis.unusual_activity.push({
               expiration: expiration,
               strike: option.strike,

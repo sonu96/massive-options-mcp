@@ -2,6 +2,130 @@
 
 This document summarizes all bug fixes implemented in the Massive Options MCP Server.
 
+## Latest Optimizations & Improvements (Round 3)
+
+### Optimization #1: Explosive API Usage in Deep Analysis
+**File:** `src/massive-client.js:755, 671, 903-911`
+
+**Problem:**
+Every call to `deepOptionsAnalysis` made 1 + (2 × N) API calls for N expirations:
+- 1 initial snapshot fetch (line 870)
+- N calls to `getMarketStructure` (each fetching its own snapshot)
+- N calls to `getVolatilityAnalysis` (each fetching its own snapshot)
+
+For the default 4 expirations, that's **9 large API calls** returning slightly different timestamps, causing:
+- Explosive API quota usage
+- Inconsistent data (GEX/magnet numbers disagree because each helper saw different market state)
+- High latency and costs
+
+**Fix:**
+Added optional `snapshot` parameter to both methods:
+```javascript
+async getMarketStructure(symbol, expiration = null, snapshot = null) {
+  const chainData = snapshot || await this.getOptionChainSnapshot(symbol, expiration);
+  // ...
+}
+
+async getVolatilityAnalysis(symbol, expiration = null, snapshot = null) {
+  const chainData = snapshot || await this.getOptionChainSnapshot(symbol, expiration);
+  // ...
+}
+```
+
+Then reuse the snapshot in deep analysis:
+```javascript
+const marketStructure = await this.getMarketStructure(symbol, expiration, snapshot);
+const volAnalysis = await this.getVolatilityAnalysis(symbol, expiration, snapshot);
+```
+
+**Impact:**
+- ✅ Reduced from 9 API calls to **1 API call** for 4 expirations (89% reduction!)
+- ✅ Consistent data across all analyses
+- ✅ Faster execution and lower costs
+
+---
+
+### Improvement #2: No Feedback for Missing Expirations
+**File:** `src/massive-client.js:888-899`
+
+**Problem:**
+When users supplied `target_expirations` that didn't exist, the function silently continued (loops just skipped missing data). Users only realized their request was ignored when final output lacked those expirations.
+
+**Fix:**
+Added validation and feedback:
+```javascript
+// Validate that requested expirations exist in snapshot
+const availableExpirations = new Set(snapshot.expirations);
+const expirationsToAnalyze = requestedExpirations.filter(exp => availableExpirations.has(exp));
+const missingExpirations = requestedExpirations.filter(exp => !availableExpirations.has(exp));
+
+if (missingExpirations.length > 0) {
+  console.error(`⚠️  Warning: ${missingExpirations.length} requested expirations not found: ${missingExpirations.join(', ')}`);
+}
+
+if (expirationsToAnalyze.length === 0) {
+  throw new Error(`None of the requested expirations exist. Available: ${snapshot.expirations.join(', ')}`);
+}
+```
+
+**Impact:**
+- ✅ Users get immediate feedback about invalid expirations
+- ✅ Clear error messages list available expirations
+- ✅ Prevents confusion from silent failures
+
+---
+
+### Improvement #3: Hard-Coded Unusual Flow Thresholds
+**File:** `src/massive-client.js:955-961, src/index.js:352-368`
+
+**Problem:**
+Deep analysis always used fixed thresholds:
+- `volume > 1000`
+- `volumeOIRatio > 0.5` OR `volume > 5000`
+
+This meant:
+- Low-float names or LEAPS never registered as "unusual"
+- Mega-cap weeklies were over-represented
+- No way for advanced users to tune detection
+
+**Fix:**
+Added configurable `flow_config` parameter with defaults:
+```javascript
+const flowThresholds = {
+  min_volume: flow_config.min_volume || 1000,
+  volume_oi_ratio: flow_config.volume_oi_ratio || 0.5,
+  high_volume_threshold: flow_config.high_volume_threshold || 5000,
+  ...flow_config
+};
+
+if (volume > flowThresholds.min_volume &&
+    (volumeOIRatio > flowThresholds.volume_oi_ratio ||
+     volume > flowThresholds.high_volume_threshold)) {
+  // Flag as unusual
+}
+```
+
+Added to MCP schema:
+```javascript
+flow_config: {
+  type: 'object',
+  properties: {
+    min_volume: { type: 'number', description: '...' },
+    volume_oi_ratio: { type: 'number', description: '...' },
+    high_volume_threshold: { type: 'number', description: '...' }
+  },
+  description: 'Configurable thresholds for unusual flow detection...'
+}
+```
+
+**Impact:**
+- ✅ Users can tune thresholds for ticker liquidity
+- ✅ Low-float names: use lower thresholds
+- ✅ Mega-caps: use higher thresholds
+- ✅ Defaults still work for most cases
+
+---
+
 ## Latest Bug Fixes (Round 2)
 
 ### Bug #9: EMA/RSI Response Structure Broken
