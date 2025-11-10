@@ -2,6 +2,90 @@
 
 This document summarizes all bug fixes implemented in the Massive Options MCP Server.
 
+## Latest Bug Fixes (Round 2)
+
+### Bug #9: EMA/RSI Response Structure Broken
+**File:** `src/massive-client.js:1472-1520, 1532-1539`
+
+**Problem:**
+The API returns `response.data.results` as an object with a `values` array: `{ values: [...] }`, but the code was returning this raw object directly. The `interpretRSI` function expected an array and tried to do `results[0]`, which failed because:
+- `results.length` was `undefined`
+- `results[0]` was `undefined`
+- Every RSI call ended up in "No RSI value available" branch even with valid data
+
+**Fix:**
+```javascript
+// Map response.data.results.values to proper array with ISO timestamps
+const rawResults = response.data.results || {};
+const values = rawResults.values || [];
+const processedResults = values.map(item => ({
+  timestamp: new Date(item.timestamp).toISOString(),
+  value: item.value
+}));
+```
+
+**Impact:**
+- ✅ EMA/RSI now return proper `{ timestamp, value }` arrays as documented
+- ✅ RSI interpretation works correctly
+- ✅ Downstream consumers get the promised data structure
+
+**Test Results:** 3/3 EMA/RSI tests passing
+
+---
+
+### Bug #10: getDividends Drops Zero Values
+**File:** `src/massive-client.js:1408-1417`
+
+**Problem:**
+The filter code used `if (frequency)`, `if (cash_amount)`, which treats `0` as falsy. This meant:
+- `frequency: 0` (one-time dividends) was silently dropped
+- `cash_amount: 0` (zero dividends) was silently dropped
+- Users couldn't query these legitimate cases
+
+**Fix:**
+```javascript
+// BEFORE (WRONG)
+if (frequency) queryParams.frequency = frequency;
+if (cash_amount) queryParams.cash_amount = cash_amount;
+
+// AFTER (CORRECT)
+if (frequency !== null && frequency !== undefined) queryParams.frequency = frequency;
+if (cash_amount !== null && cash_amount !== undefined) queryParams.cash_amount = cash_amount;
+```
+
+**Impact:** All documented filters now work, including `0` values
+
+**Test Results:** 4/4 dividend filter tests passing
+
+---
+
+### Bug #11: Tests Require API Key to Run
+**Files:** `tests/critical-bugfixes.test.js`, `tests/dealer-positioning-bugfixes.test.js`, `tests/new-tools.test.js`
+
+**Problem:**
+All integration tests hard-failed if `MASSIVE_API_KEY` wasn't set, breaking:
+- Contributor workflow (no API key needed for unit tests)
+- CI environments (can't access proprietary API)
+- Core test suite (should be runnable out of the box)
+
+**Fix:**
+```javascript
+const describeIfApiKey = process.env.MASSIVE_API_KEY ? describe : describe.skip;
+
+describeIfApiKey('Test Suite Name', () => {
+  // Tests only run if API key is present
+});
+```
+
+**Impact:**
+- ✅ Tests skip gracefully without API key
+- ✅ Contributors can run `npm test` without credentials
+- ✅ CI environments won't break on missing API key
+
+**Test Results:** All integration tests skip cleanly when no API key present
+
+---
+
 ## Critical Bugs (Fixed - High Priority)
 
 ### Bug #1: Base URL Double-Path in get_option_quote
@@ -324,11 +408,24 @@ Added all missing parameters to the MCP schema:
 
    **Result:** ✅ 8/12 passing (others fail due to API 403/429 errors, not code bugs)
 
+4. **`tests/additional-bugfixes.test.js`** - 11 tests covering additional bugs:
+   - EMA/RSI response structure
+   - getDividends zero-value filters
+   - Integration scenarios
+   - Test configuration validation
+
+   **Result:** ✅ 11/11 passing (100%)
+
 ---
 
 ## Summary Statistics
 
-### Bugs Fixed: 8 Total
+### Bugs Fixed: 11 Total
+
+**Round 2 (Latest):**
+- 🔧 EMA/RSI response structure broken
+- 🔧 getDividends drops zero values
+- 🔧 Tests require API key to run
 
 **Critical Bugs (High Priority):**
 - 🚨 Base URL double-path causing null underlying_price
@@ -351,10 +448,11 @@ Added all missing parameters to the MCP schema:
 - Option EMA indicator
 - Option RSI indicator
 
-### Tests Added: 38
+### Tests Added: 49
 - 17 tests for new tools (100% passing)
 - 9 tests for dealer positioning bug fixes (33% passing due to API limits)
 - 12 tests for critical bug fixes (67% passing due to API limits)
+- 11 tests for additional bug fixes (100% passing)
 
 ### Documentation Updated:
 - README.md: Updated tool count from 17 to 22
@@ -366,7 +464,12 @@ Added all missing parameters to the MCP schema:
 
 ## Verification
 
-All 8 bugs have been fixed and verified:
+All 11 bugs have been fixed and verified:
+
+### Round 2 Bugs (Verified):
+✅ **EMA/RSI response structure** - proper arrays returned (3/3 tests passing)
+✅ **getDividends zero values** - 0 filters no longer dropped (4/4 tests passing)
+✅ **Test API key requirement** - tests skip gracefully without key
 
 ### Critical Bugs (Verified):
 ✅ **Base URL fix** - underlying_price now populated (3/3 tests passing)

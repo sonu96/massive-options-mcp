@@ -1405,16 +1405,16 @@ export class MassiveOptionsClient {
         limit
       };
 
-      // Add all optional filters
-      if (ticker) queryParams.ticker = ticker;
-      if (ex_dividend_date) queryParams.ex_dividend_date = ex_dividend_date;
-      if (record_date) queryParams.record_date = record_date;
-      if (declaration_date) queryParams.declaration_date = declaration_date;
-      if (pay_date) queryParams.pay_date = pay_date;
-      if (cash_amount) queryParams.cash_amount = cash_amount;
-      if (frequency) queryParams.frequency = frequency;
-      if (sort) queryParams.sort = sort;
-      if (order) queryParams.order = order;
+      // Add all optional filters (check !== null/undefined to allow 0 values)
+      if (ticker !== null && ticker !== undefined) queryParams.ticker = ticker;
+      if (ex_dividend_date !== null && ex_dividend_date !== undefined) queryParams.ex_dividend_date = ex_dividend_date;
+      if (record_date !== null && record_date !== undefined) queryParams.record_date = record_date;
+      if (declaration_date !== null && declaration_date !== undefined) queryParams.declaration_date = declaration_date;
+      if (pay_date !== null && pay_date !== undefined) queryParams.pay_date = pay_date;
+      if (cash_amount !== null && cash_amount !== undefined) queryParams.cash_amount = cash_amount;
+      if (frequency !== null && frequency !== undefined) queryParams.frequency = frequency;
+      if (sort !== null && sort !== undefined) queryParams.sort = sort;
+      if (order !== null && order !== undefined) queryParams.order = order;
 
       const response = await axios.get('https://api.massive.com/v3/reference/dividends', {
         params: queryParams
@@ -1460,6 +1460,14 @@ export class MassiveOptionsClient {
         }
       });
 
+      // Map response.data.results.values to proper array with ISO timestamps
+      const rawResults = response.data.results || {};
+      const values = rawResults.values || [];
+      const processedResults = values.map(item => ({
+        timestamp: new Date(item.timestamp).toISOString(),
+        value: item.value
+      }));
+
       return {
         ticker,
         underlying: symbol,
@@ -1469,7 +1477,7 @@ export class MassiveOptionsClient {
         indicator: 'EMA',
         timespan,
         window,
-        results: response.data.results || [],
+        results: processedResults,
         fetched_at: new Date().toISOString()
       };
 
@@ -1506,6 +1514,14 @@ export class MassiveOptionsClient {
         }
       });
 
+      // Map response.data.results.values to proper array with ISO timestamps
+      const rawResults = response.data.results || {};
+      const values = rawResults.values || [];
+      const processedResults = values.map(item => ({
+        timestamp: new Date(item.timestamp).toISOString(),
+        value: item.value
+      }));
+
       return {
         ticker,
         underlying: symbol,
@@ -1515,8 +1531,8 @@ export class MassiveOptionsClient {
         indicator: 'RSI',
         timespan,
         window,
-        results: response.data.results || [],
-        interpretation: this.interpretRSI(response.data.results),
+        results: processedResults,
+        interpretation: this.interpretRSI(processedResults),
         fetched_at: new Date().toISOString()
       };
 

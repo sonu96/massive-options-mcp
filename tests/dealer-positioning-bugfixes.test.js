@@ -9,14 +9,13 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-describe('Dealer Positioning Bug Fixes', () => {
+const describeIfApiKey = process.env.MASSIVE_API_KEY ? describe : describe.skip;
+
+describeIfApiKey('Dealer Positioning Bug Fixes', () => {
   let client;
 
   beforeAll(() => {
     const apiKey = process.env.MASSIVE_API_KEY;
-    if (!apiKey) {
-      throw new Error('MASSIVE_API_KEY environment variable is required');
-    }
     client = new MassiveOptionsClient(apiKey);
   });
 
