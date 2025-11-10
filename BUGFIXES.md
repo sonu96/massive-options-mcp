@@ -2,6 +2,99 @@
 
 This document summarizes all bug fixes implemented in the Massive Options MCP Server.
 
+## Critical Fixes for Optimization Bugs (Round 4)
+
+### Bug #12: Per-Expiration Math Broken by Snapshot Reuse
+**File:** `src/massive-client.js:769-796`
+
+**Problem:**
+The snapshot reuse optimization broke per-expiration filtering. When passing the full snapshot (containing ALL expirations) to `getMarketStructure`, it analyzed all expirations instead of just the requested one. This caused:
+- Identical put/call ratios, gamma regime, max pain across all expirations
+- `institutional_magnets` labeled with wrong expiration
+- Misleading statistics for users requesting specific expiries
+
+**Fix:**
+```javascript
+// Filter to requested expiration if snapshot contains multiple
+let dataToAnalyze = chainData.data;
+if (expiration && chainData.data[expiration]) {
+  dataToAnalyze = { [expiration]: chainData.data[expiration] };
+}
+```
+
+**Impact:** ✅ Per-expiration metrics now correctly filtered
+
+---
+
+### Bug #13: Volatility Analysis Still Downloads Full Chain
+**File:** `src/massive-client.js:689-700`
+
+**Problem:**
+Similar to bug #12, `getVolatilityAnalysis` analyzed ALL expirations in the snapshot instead of filtering to the requested one. Also used `chainData.data[exp]` instead of the filtered `dataToAnalyze[exp]`.
+
+**Fix:**
+```javascript
+// Filter to requested expiration if specified
+let dataToAnalyze = chainData.data;
+if (expiration && chainData.data[expiration]) {
+  dataToAnalyze = { [expiration]: chainData.data[expiration] };
+}
+
+const expirations = Object.keys(dataToAnalyze).sort();
+for (const exp of expirations) {
+  const expData = dataToAnalyze[exp]; // Use filtered data
+}
+```
+
+**Impact:** ✅ Volatility analysis now respects expiration filter
+
+---
+
+### Bug #14: Calendar Spreads Ignore Expiration Filter
+**File:** `src/massive-client.js:1094-1109`
+
+**Problem:**
+Calendar spread generation always used the full `snapshot.data` map, ignoring `target_expirations`. This yielded recommendations for expirations the user explicitly excluded.
+
+**Fix:**
+```javascript
+// Filter snapshot.data to only include expirations being analyzed
+const filteredData = {};
+expirationsToAnalyze.forEach(exp => {
+  if (snapshot.data[exp]) {
+    filteredData[exp] = snapshot.data[exp];
+  }
+});
+
+const calendarSpreads = generateCalendarSpreads(filteredData, underlyingPrice, 'call');
+```
+
+**Impact:** ✅ Calendar spreads now respect user's expiration filter
+
+---
+
+### Bug #15: Missing account_size Validation Causes NaNs
+**File:** `src/massive-client.js:865-868`
+
+**Problem:**
+If user omitted `account_size` or passed `0`/negative, code continued execution. Downstream `calculatePositionSize` multiplied by account_size, causing NaN to propagate through:
+- `recommended_contracts`
+- `total_cost`
+- `risk_pct`
+- Final allocation report
+
+**Fix:**
+```javascript
+// Validate account_size
+if (!account_size || typeof account_size !== 'number' || account_size <= 0) {
+  throw new Error(`Invalid account_size: must be a positive number, got ${account_size}`);
+}
+```
+
+**Impact:** ✅ Clear error instead of NaN-filled recommendations
+
+---
+
 ## Latest Optimizations & Improvements (Round 3)
 
 ### Optimization #1: Explosive API Usage in Deep Analysis

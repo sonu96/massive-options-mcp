@@ -685,12 +685,19 @@ export class MassiveOptionsClient {
         term_structure: null,
         iv_rank: null
       };
-      
+
+      // Filter to requested expiration if specified
+      let dataToAnalyze = chainData.data;
+      if (expiration && chainData.data[expiration]) {
+        // Filter to only the requested expiration
+        dataToAnalyze = { [expiration]: chainData.data[expiration] };
+      }
+
       // Analyze volatility smile for each expiration
-      const expirations = Object.keys(chainData.data).sort();
-      
+      const expirations = Object.keys(dataToAnalyze).sort();
+
       for (const exp of expirations) {
-        const expData = chainData.data[exp];
+        const expData = dataToAnalyze[exp];
         const strikes = [];
         const ivs = [];
         
@@ -756,34 +763,41 @@ export class MassiveOptionsClient {
     try {
       // Get option chain snapshot (reuse if provided)
       const chainData = snapshot || await this.getOptionChainSnapshot(symbol, expiration);
-      
+
       if (!chainData || !chainData.data) {
         throw new Error('No option chain data available');
       }
-      
+
       const spotPrice = chainData.underlying.price;
       if (!spotPrice) {
         throw new Error('Unable to get underlying price');
       }
-      
+
+      // Filter to requested expiration if snapshot contains multiple
+      let dataToAnalyze = chainData.data;
+      if (expiration && chainData.data[expiration]) {
+        // Filter to only the requested expiration
+        dataToAnalyze = { [expiration]: chainData.data[expiration] };
+      }
+
       // Perform all market structure analyses
       const analysis = {
         symbol: symbol,
         underlying_price: spotPrice,
         analysis_time: new Date().toISOString(),
-        
+
         // Put/Call ratios
-        put_call_ratios: analyzePutCallRatios(chainData.data),
-        
+        put_call_ratios: analyzePutCallRatios(dataToAnalyze),
+
         // Gamma exposure
-        gamma_exposure: analyzeGammaExposure(chainData.data, spotPrice),
-        
+        gamma_exposure: analyzeGammaExposure(dataToAnalyze, spotPrice),
+
         // Max pain
-        max_pain: calculateMaxPain(chainData.data, spotPrice),
-        
+        max_pain: calculateMaxPain(dataToAnalyze, spotPrice),
+
         // OI distribution
-        oi_distribution: analyzeOIDistribution(chainData.data, spotPrice),
-        
+        oi_distribution: analyzeOIDistribution(dataToAnalyze, spotPrice),
+
         // Summary metrics from chainData
         summary: chainData.summary
       };
@@ -847,6 +861,11 @@ export class MassiveOptionsClient {
       current_price = null,
       flow_config = {} // Configurable unusual flow detection thresholds
     } = params;
+
+    // Validate account_size
+    if (!account_size || typeof account_size !== 'number' || account_size <= 0) {
+      throw new Error(`Invalid account_size: must be a positive number, got ${account_size}`);
+    }
 
     // Validate and sanitize risk configuration
     const validatedRiskConfig = validateRiskParameters(risk_config);
@@ -1078,8 +1097,16 @@ export class MassiveOptionsClient {
 
       // Generate calendar spreads across expirations
       if (strategies.includes('calendar_spread') && expirationsToAnalyze.length >= 2) {
+        // Filter snapshot.data to only include expirations being analyzed
+        const filteredData = {};
+        expirationsToAnalyze.forEach(exp => {
+          if (snapshot.data[exp]) {
+            filteredData[exp] = snapshot.data[exp];
+          }
+        });
+
         const calendarSpreads = generateCalendarSpreads(
-          snapshot.data,
+          filteredData,
           underlyingPrice,
           'call'
         );
