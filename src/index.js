@@ -572,6 +572,154 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           additionalProperties: false
         }
+      },
+      {
+        name: 'get_option_ema',
+        description: 'Get Exponential Moving Average (EMA) for an option contract. Useful for identifying trends and momentum in option prices. EMA reacts faster to price changes than simple moving averages. Common windows: 10 (short-term), 50 (medium-term), 200 (long-term).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            symbol: {
+              type: 'string',
+              description: 'Stock ticker symbol in uppercase (e.g., "AAPL", "SPY")'
+            },
+            optionType: {
+              type: 'string',
+              enum: ['call', 'put'],
+              description: 'Option type: "call" or "put" (lowercase)'
+            },
+            strike: {
+              type: 'number',
+              description: 'Strike price as a number'
+            },
+            expiration: {
+              type: 'string',
+              pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+              description: 'Expiration date in YYYY-MM-DD format'
+            },
+            timespan: {
+              type: 'string',
+              enum: ['day', 'hour', 'minute'],
+              description: 'Time interval for each bar (default: day)'
+            },
+            window: {
+              type: 'number',
+              description: 'EMA window size - number of periods (default: 50). Common values: 10, 20, 50, 200'
+            },
+            series_type: {
+              type: 'string',
+              enum: ['close', 'open', 'high', 'low'],
+              description: 'Price type to use for EMA calculation (default: close)'
+            },
+            limit: {
+              type: 'number',
+              description: 'Number of data points to return (default: 10, max: 5000)'
+            },
+            adjusted: {
+              type: 'boolean',
+              description: 'Whether to adjust for splits (default: true)'
+            }
+          },
+          required: ['symbol', 'optionType', 'strike', 'expiration'],
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'get_option_rsi',
+        description: 'Get Relative Strength Index (RSI) for an option contract. RSI measures momentum and identifies overbought (>70) or oversold (<30) conditions. Useful for timing entries and exits. Default window is 14 periods.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            symbol: {
+              type: 'string',
+              description: 'Stock ticker symbol in uppercase (e.g., "AAPL", "SPY")'
+            },
+            optionType: {
+              type: 'string',
+              enum: ['call', 'put'],
+              description: 'Option type: "call" or "put" (lowercase)'
+            },
+            strike: {
+              type: 'number',
+              description: 'Strike price as a number'
+            },
+            expiration: {
+              type: 'string',
+              pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+              description: 'Expiration date in YYYY-MM-DD format'
+            },
+            timespan: {
+              type: 'string',
+              enum: ['day', 'hour', 'minute'],
+              description: 'Time interval for each bar (default: day)'
+            },
+            window: {
+              type: 'number',
+              description: 'RSI window size - number of periods (default: 14). Typical: 14'
+            },
+            series_type: {
+              type: 'string',
+              enum: ['close', 'open', 'high', 'low'],
+              description: 'Price type to use for RSI calculation (default: close)'
+            },
+            limit: {
+              type: 'number',
+              description: 'Number of data points to return (default: 10, max: 5000)'
+            },
+            adjusted: {
+              type: 'boolean',
+              description: 'Whether to adjust for splits (default: true)'
+            }
+          },
+          required: ['symbol', 'optionType', 'strike', 'expiration'],
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'get_market_status',
+        description: 'Get current market trading status for all exchanges. Shows whether markets are open, closed, or in extended hours. Use this before placing trades to ensure markets are open and trading is allowed.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'get_upcoming_market_holidays',
+        description: 'Get upcoming market holidays and early close days. Shows dates when markets will be fully closed or closing early. Important for planning trades around options expiration dates that fall on or near holidays.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'get_dividends',
+        description: 'Get dividend information for a stock. Returns upcoming and historical dividend data including ex-dividend dates, payment dates, and amounts. CRITICAL for options trading: dividends affect option pricing and create early assignment risk for ITM calls. If a dividend is upcoming within 30 days, returns options trading implications.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            ticker: {
+              type: 'string',
+              description: 'Stock ticker symbol in uppercase (e.g., "AAPL"). If not provided, returns recent dividends for all stocks.'
+            },
+            ex_dividend_date: {
+              type: 'string',
+              pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+              description: 'Filter by specific ex-dividend date (YYYY-MM-DD)'
+            },
+            limit: {
+              type: 'number',
+              description: 'Number of dividend records to return (default: 100, max: 1000)'
+            },
+            frequency: {
+              type: 'number',
+              enum: [0, 1, 2, 4, 12],
+              description: 'Filter by dividend frequency: 0=one-time, 1=annual, 2=semi-annual, 4=quarterly, 12=monthly'
+            }
+          },
+          additionalProperties: false
+        }
       }
     ]
   };
@@ -856,6 +1004,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw new Error('Must provide either "option" or "options_array" parameter');
         }
 
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'get_option_ema': {
+        const result = await client.getOptionEMA(args);
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'get_option_rsi': {
+        const result = await client.getOptionRSI(args);
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'get_market_status': {
+        const result = await client.getMarketStatus();
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'get_upcoming_market_holidays': {
+        const result = await client.getUpcomingMarketHolidays();
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'get_dividends': {
+        const result = await client.getDividends(args);
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
 
