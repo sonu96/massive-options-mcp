@@ -1451,4 +1451,179 @@ export class MassiveOptionsClient {
 
     return summary;
   }
+
+  // ========================================
+  // Real-Time Validation System Methods
+  // ========================================
+
+  /**
+   * Get real-time option snapshot (alias for getQuote with full data)
+   * Used by probability calculator and validators
+   */
+  async getOptionSnapshot(symbol, strike, expiration, optionType) {
+    return await this.getQuote(symbol, optionType, strike, expiration);
+  }
+
+  /**
+   * Get specific option snapshot by option contract ticker
+   * Example: O:AAPL250117C00150000
+   */
+  async getSpecificOptionSnapshot(symbol, optionContract) {
+    try {
+      const response = await this.client.get(`/v3/snapshot/options/${symbol}/${optionContract}`);
+
+      if (!response.data.results) {
+        throw new Error('Option contract not found');
+      }
+
+      return response.data.results;
+    } catch (error) {
+      throw new Error(`Failed to get option snapshot: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get intraday bars for underlying or option
+   * @param {string} symbol - Stock ticker
+   * @param {number} multiplier - Bar size (1, 5, 15, etc.)
+   * @param {string} timespan - 'minute', 'hour', 'day'
+   * @param {string} date - Date in YYYY-MM-DD format (default: today)
+   * @returns {Array} Array of OHLCV bars
+   */
+  async getIntradayBars(symbol, multiplier = 5, timespan = 'minute', date = null) {
+    try {
+      const targetDate = date || new Date().toISOString().split('T')[0];
+
+      const response = await this.client.get(`/v2/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/${targetDate}/${targetDate}`);
+
+      return response.data.results || [];
+    } catch (error) {
+      console.error(`Failed to get intraday bars: ${error.message}`);
+      return [];
+    }
+  }
+
+  /**
+   * Get historical bars for volatility calculations
+   * @param {string} symbol - Stock ticker
+   * @param {number} multiplier - Bar size
+   * @param {string} timespan - 'day', 'week', 'month'
+   * @param {string} from - Start date YYYY-MM-DD
+   * @param {string} to - End date YYYY-MM-DD
+   * @returns {Array} Array of OHLCV bars
+   */
+  async getHistoricalBars(symbol, multiplier, timespan, from, to) {
+    try {
+      const response = await this.client.get(`/v2/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/${from}/${to}`);
+
+      return response.data.results || [];
+    } catch (error) {
+      throw new Error(`Failed to get historical bars: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get RSI (Relative Strength Index) indicator
+   * @param {string} symbol - Stock ticker
+   * @param {number} window - RSI period (default 14)
+   * @returns {Object} RSI data with values array
+   */
+  async getRSI(symbol, window = 14) {
+    try {
+      const response = await this.client.get(`/v1/indicators/rsi/${symbol}`, {
+        params: {
+          timespan: 'day',
+          adjusted: true,
+          window: window,
+          series_type: 'close',
+          order: 'desc',
+          limit: 1
+        }
+      });
+
+      return response.data.results || null;
+    } catch (error) {
+      console.error(`Failed to get RSI: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Get SMA (Simple Moving Average) indicator
+   * @param {string} symbol - Stock ticker
+   * @param {number} window - SMA period (20, 50, 200, etc.)
+   * @returns {Object} SMA data with values array
+   */
+  async getSMA(symbol, window = 20) {
+    try {
+      const response = await this.client.get(`/v1/indicators/sma/${symbol}`, {
+        params: {
+          timespan: 'day',
+          adjusted: true,
+          window: window,
+          series_type: 'close',
+          order: 'desc',
+          limit: 1
+        }
+      });
+
+      return response.data.results || null;
+    } catch (error) {
+      console.error(`Failed to get SMA: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Get EMA (Exponential Moving Average) indicator
+   * @param {string} symbol - Stock ticker
+   * @param {number} window - EMA period
+   * @returns {Object} EMA data with values array
+   */
+  async getEMA(symbol, window = 20) {
+    try {
+      const response = await this.client.get(`/v1/indicators/ema/${symbol}`, {
+        params: {
+          timespan: 'day',
+          adjusted: true,
+          window: window,
+          series_type: 'close',
+          order: 'desc',
+          limit: 1
+        }
+      });
+
+      return response.data.results || null;
+    } catch (error) {
+      console.error(`Failed to get EMA: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Get MACD indicator
+   * @param {string} symbol - Stock ticker
+   * @returns {Object} MACD data
+   */
+  async getMACD(symbol) {
+    try {
+      const response = await this.client.get(`/v1/indicators/macd/${symbol}`, {
+        params: {
+          timespan: 'day',
+          adjusted: true,
+          short_window: 12,
+          long_window: 26,
+          signal_window: 9,
+          series_type: 'close',
+          order: 'desc',
+          limit: 1
+        }
+      });
+
+      return response.data.results || null;
+    } catch (error) {
+      console.error(`Failed to get MACD: ${error.message}`);
+      return null;
+    }
+  }
 }
