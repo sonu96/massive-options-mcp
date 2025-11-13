@@ -139,21 +139,27 @@ export class MassiveOptionsClient {
       
       // Format the response to include all relevant quote and contract data
       return {
+        // Timestamp information
+        timestamp: new Date().toISOString(),
+        data_timestamp: quote.day?.last_updated
+          ? new Date(quote.day.last_updated / 1000000).toISOString()
+          : new Date().toISOString(),
+
         // Contract identification
         ticker: quote.details.ticker,
         underlying_ticker: symbol,
         contract_type: quote.details.contract_type,
-        
+
         // Contract specifications
         strike_price: quote.details.strike_price,
         expiration_date: quote.details.expiration_date,
         exercise_style: quote.details.exercise_style,
         shares_per_contract: quote.details.shares_per_contract,
-        
+
         // Exchange information
         primary_exchange: contractDetails.primary_exchange || 'N/A',
         cfi: contractDetails.cfi || 'N/A',
-        
+
         // Market data
         quote: {
           last: quote.day.close,
@@ -165,9 +171,23 @@ export class MassiveOptionsClient {
           change: quote.day.change,
           change_percent: quote.day.change_percent,
           previous_close: quote.day.previous_close,
-          last_updated: new Date(quote.day.last_updated / 1000000).toISOString()
+          last_updated: quote.day?.last_updated
+            ? new Date(quote.day.last_updated / 1000000).toISOString()
+            : null
         },
-        
+
+        // Latest bid/ask if available
+        last_quote: quote.last_quote ? {
+          bid_price: quote.last_quote.bid_price,
+          ask_price: quote.last_quote.ask_price,
+          mid_price: quote.last_quote.mid_price,
+          bid_size: quote.last_quote.bid_size,
+          ask_size: quote.last_quote.ask_size,
+          quote_timestamp: quote.last_quote.last_updated
+            ? new Date(quote.last_quote.last_updated / 1000000).toISOString()
+            : null
+        } : null,
+
         // Risk metrics
         greeks: {
           delta: quote.greeks?.delta || null,
@@ -177,10 +197,10 @@ export class MassiveOptionsClient {
           rho: quote.greeks?.rho || null
         },
         implied_volatility: quote.implied_volatility,
-        
+
         // Market interest
         open_interest: quote.open_interest,
-        
+
         // Additional info for analysis
         underlying_price: underlyingPrice,
         moneyness: calculateMoneyness(quote.details.contract_type, quote.details.strike_price, underlyingPrice),
@@ -1470,13 +1490,26 @@ export class MassiveOptionsClient {
    */
   async getSpecificOptionSnapshot(symbol, optionContract) {
     try {
+      const fetchTimestamp = new Date().toISOString();
       const response = await this.client.get(`/v3/snapshot/options/${symbol}/${optionContract}`);
 
       if (!response.data.results) {
         throw new Error('Option contract not found');
       }
 
-      return response.data.results;
+      const results = response.data.results;
+
+      // Add timestamp metadata
+      return {
+        ...results,
+        fetch_timestamp: fetchTimestamp,
+        data_timestamp: results.day?.last_updated
+          ? new Date(results.day.last_updated / 1000000).toISOString()
+          : fetchTimestamp,
+        data_age_seconds: results.day?.last_updated
+          ? (Date.now() - (results.day.last_updated / 1000000)) / 1000
+          : 0
+      };
     } catch (error) {
       throw new Error(`Failed to get option snapshot: ${error.message}`);
     }
@@ -1492,11 +1525,19 @@ export class MassiveOptionsClient {
    */
   async getIntradayBars(symbol, multiplier = 5, timespan = 'minute', date = null) {
     try {
+      const fetchTimestamp = new Date().toISOString();
       const targetDate = date || new Date().toISOString().split('T')[0];
 
       const response = await this.client.get(`/v2/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/${targetDate}/${targetDate}`);
 
-      return response.data.results || [];
+      const results = response.data.results || [];
+
+      // Add timestamp to each bar
+      return results.map(bar => ({
+        ...bar,
+        bar_timestamp: new Date(bar.t).toISOString(),
+        fetch_timestamp: fetchTimestamp
+      }));
     } catch (error) {
       console.error(`Failed to get intraday bars: ${error.message}`);
       return [];
@@ -1514,9 +1555,17 @@ export class MassiveOptionsClient {
    */
   async getHistoricalBars(symbol, multiplier, timespan, from, to) {
     try {
+      const fetchTimestamp = new Date().toISOString();
       const response = await this.client.get(`/v2/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/${from}/${to}`);
 
-      return response.data.results || [];
+      const results = response.data.results || [];
+
+      // Add timestamp to each bar
+      return results.map(bar => ({
+        ...bar,
+        bar_timestamp: new Date(bar.t).toISOString(),
+        fetch_timestamp: fetchTimestamp
+      }));
     } catch (error) {
       throw new Error(`Failed to get historical bars: ${error.message}`);
     }

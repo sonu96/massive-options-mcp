@@ -120,8 +120,15 @@ export class OptionsProbabilityCalculator {
       const fromDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       const bars = await this.client.getHistoricalBars(symbol, 1, 'day', fromDate, toDate);
 
+      // Capture timestamps
+      const calculationTimestamp = new Date().toISOString();
+      const dataTimestamp = snapshot.data_timestamp || snapshot.timestamp;
+      const dataAgeSeconds = snapshot.data_timestamp
+        ? (Date.now() - new Date(snapshot.data_timestamp).getTime()) / 1000
+        : 0;
+
       // Extract key parameters
-      const S = snapshot.underlying_asset?.price || 0;      // Current stock price
+      const S = snapshot.underlying_asset?.price || snapshot.underlying_price || 0;  // Current stock price
       const K = strike;                                      // Strike price
       const σ = snapshot.implied_volatility || 0;           // Implied volatility
       const T = calculateDTE(expiration) / 365;             // Time to expiry (years)
@@ -162,6 +169,15 @@ export class OptionsProbabilityCalculator {
       const warnings = this.generateWarnings(probTouch, distanceInATR, σ, S, K, optionType);
 
       return {
+        // Timestamp information
+        calculation_timestamp: calculationTimestamp,
+        data_timestamp: dataTimestamp,
+        data_age_seconds: dataAgeSeconds,
+        data_freshness: dataAgeSeconds < 60 ? 'FRESH'
+          : dataAgeSeconds < 300 ? 'RECENT'
+            : dataAgeSeconds < 900 ? 'STALE'
+              : 'OLD',
+
         // Basic parameters
         current_price: S,
         strike: K,
