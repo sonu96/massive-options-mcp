@@ -89,6 +89,104 @@ export class MassiveOptionsClient {
     }
   }
 
+  /**
+   * Get real-time stock quote
+   * @param {string} symbol - Stock ticker symbol
+   * @returns {Object} Stock quote with timestamp
+   */
+  async getStockQuote(symbol) {
+    try {
+      const fetchTimestamp = new Date().toISOString();
+
+      // Try v3 snapshot endpoint first (most comprehensive)
+      try {
+        const response = await this.client.get(`/v3/snapshot`, {
+          params: {
+            ticker: symbol,
+            type: 'stocks'
+          }
+        });
+
+        if (response.data.results && response.data.results.length > 0) {
+          const result = response.data.results[0];
+
+          return {
+            timestamp: fetchTimestamp,
+            data_timestamp: result.last_quote?.last_updated
+              ? new Date(result.last_quote.last_updated / 1000000).toISOString()
+              : fetchTimestamp,
+
+            symbol: symbol,
+            price: result.last_trade?.price || result.last_quote?.ask_price || null,
+
+            quote: {
+              bid: result.last_quote?.bid_price,
+              ask: result.last_quote?.ask_price,
+              last: result.last_trade?.price,
+              bid_size: result.last_quote?.bid_size,
+              ask_size: result.last_quote?.ask_size
+            },
+
+            session: result.session ? {
+              open: result.session.open,
+              high: result.session.high,
+              low: result.session.low,
+              close: result.session.close,
+              volume: result.session.volume,
+              change: result.session.change,
+              change_percent: result.session.change_percent,
+              previous_close: result.session.previous_close
+            } : null,
+
+            market_status: result.market_status
+          };
+        }
+      } catch (snapshotError) {
+        console.error('Snapshot endpoint failed, trying previous close:', snapshotError.message);
+      }
+
+      // Fallback: Try previous close endpoint
+      const response = await this.client.get(`/v2/aggs/ticker/${symbol}/prev`);
+
+      if (response.data.results && response.data.results.length > 0) {
+        const result = response.data.results[0];
+
+        return {
+          timestamp: fetchTimestamp,
+          data_timestamp: new Date(result.t).toISOString(),
+
+          symbol: symbol,
+          price: result.c,
+
+          quote: {
+            last: result.c,
+            open: result.o,
+            high: result.h,
+            low: result.l,
+            close: result.c,
+            volume: result.v,
+            vwap: result.vw
+          },
+
+          session: {
+            open: result.o,
+            high: result.h,
+            low: result.l,
+            close: result.c,
+            volume: result.v,
+            previous_close: result.c
+          },
+
+          market_status: 'closed'
+        };
+      }
+
+      throw new Error('No stock data available');
+    } catch (error) {
+      throw new Error(`Failed to get stock quote: ${error.message}`);
+    }
+  }
+
   async getQuote(symbol, optionType, strike, expiration) {
     try {
       // Use the snapshot endpoint with filters to get quote data
