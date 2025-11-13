@@ -1277,4 +1277,178 @@ export class MassiveOptionsClient {
       throw new Error(`Failed to get dealer positioning matrix: ${error.message}`);
     }
   }
+
+  async getMarketIndicators() {
+    try {
+      console.error('Fetching market indicators...');
+
+      const symbols = {
+        SPY: 'S&P 500 ETF',
+        VIX: 'Volatility Index',
+        QQQ: 'Nasdaq-100 Tech ETF',
+        UUP: 'US Dollar Index ETF',
+        TLT: '20+ Year Treasury Bond ETF'
+      };
+
+      const indicators = {};
+
+      // Fetch data for each symbol
+      for (const [symbol, name] of Object.entries(symbols)) {
+        try {
+          // Get current quote
+          const quoteResponse = await this.client.get(`/v3/quotes/${symbol}`);
+
+          // Get previous day data
+          const prevResponse = await this.client.get(`/v2/aggs/ticker/${symbol}/prev`);
+
+          if (quoteResponse.data.results && quoteResponse.data.results.length > 0 &&
+              prevResponse.data.results && prevResponse.data.results.length > 0) {
+
+            const quote = quoteResponse.data.results[0];
+            const prev = prevResponse.data.results[0];
+
+            // Calculate current price (use last trade or average of bid/ask)
+            const currentPrice = quote.last_price || ((quote.ask_price + quote.bid_price) / 2);
+            const prevClose = prev.c;
+
+            // Calculate change
+            const change = currentPrice - prevClose;
+            const changePercent = (change / prevClose) * 100;
+
+            // Determine direction and strength
+            let direction, strength, trend;
+
+            if (changePercent > 0) {
+              direction = 'UP';
+              if (changePercent > 2) strength = 'STRONG';
+              else if (changePercent > 0.5) strength = 'MODERATE';
+              else strength = 'WEAK';
+            } else if (changePercent < 0) {
+              direction = 'DOWN';
+              if (changePercent < -2) strength = 'STRONG';
+              else if (changePercent < -0.5) strength = 'MODERATE';
+              else strength = 'WEAK';
+            } else {
+              direction = 'FLAT';
+              strength = 'NEUTRAL';
+            }
+
+            // Special handling for VIX (volatility interpretation)
+            if (symbol === 'VIX') {
+              if (currentPrice > 30) trend = 'HIGH FEAR - Market stress elevated';
+              else if (currentPrice > 20) trend = 'ELEVATED - Increased uncertainty';
+              else if (currentPrice < 15) trend = 'LOW - Complacency in markets';
+              else trend = 'NORMAL - Healthy volatility levels';
+            } else if (symbol === 'UUP') {
+              // Dollar interpretation
+              trend = direction === 'UP' ?
+                'Dollar strengthening - headwind for stocks/commodities' :
+                'Dollar weakening - tailwind for stocks/commodities';
+            } else if (symbol === 'TLT') {
+              // Bond interpretation (inverse to yields)
+              trend = direction === 'UP' ?
+                'Bonds rallying - yields falling, risk-off sentiment' :
+                'Bonds selling - yields rising, risk-on or inflation concerns';
+            } else {
+              // Stock ETF interpretation
+              trend = `${direction.toLowerCase()} ${strength.toLowerCase()}`;
+            }
+
+            indicators[symbol] = {
+              name: name,
+              current_price: parseFloat(currentPrice.toFixed(2)),
+              previous_close: parseFloat(prevClose.toFixed(2)),
+              change: parseFloat(change.toFixed(2)),
+              change_percent: parseFloat(changePercent.toFixed(2)),
+              direction: direction,
+              strength: strength,
+              trend: trend,
+              timestamp: new Date(quote.participant_timestamp / 1000000).toISOString()
+            };
+
+          }
+        } catch (symbolError) {
+          console.error(`Error fetching ${symbol}:`, symbolError.message);
+          indicators[symbol] = {
+            name: name,
+            error: `Failed to fetch data: ${symbolError.message}`
+          };
+        }
+      }
+
+      // Generate market summary
+      const summary = this.generateMarketSummary(indicators);
+
+      return {
+        timestamp: new Date().toISOString(),
+        indicators: indicators,
+        market_summary: summary
+      };
+
+    } catch (error) {
+      throw new Error(`Failed to get market indicators: ${error.message}`);
+    }
+  }
+
+  generateMarketSummary(indicators) {
+    const summary = {
+      overall_sentiment: 'NEUTRAL',
+      risk_environment: 'NORMAL',
+      key_observations: []
+    };
+
+    // Check SPY direction
+    if (indicators.SPY && !indicators.SPY.error) {
+      if (indicators.SPY.direction === 'UP' && indicators.SPY.strength !== 'WEAK') {
+        summary.overall_sentiment = 'BULLISH';
+        summary.key_observations.push(`SPY trending ${indicators.SPY.direction.toLowerCase()} (${indicators.SPY.change_percent}%)`);
+      } else if (indicators.SPY.direction === 'DOWN' && indicators.SPY.strength !== 'WEAK') {
+        summary.overall_sentiment = 'BEARISH';
+        summary.key_observations.push(`SPY trending ${indicators.SPY.direction.toLowerCase()} (${indicators.SPY.change_percent}%)`);
+      }
+    }
+
+    // Check VIX level
+    if (indicators.VIX && !indicators.VIX.error) {
+      if (indicators.VIX.current_price > 25) {
+        summary.risk_environment = 'HIGH_FEAR';
+        summary.key_observations.push(`VIX elevated at ${indicators.VIX.current_price} - heightened volatility`);
+      } else if (indicators.VIX.current_price < 15) {
+        summary.risk_environment = 'COMPLACENT';
+        summary.key_observations.push(`VIX low at ${indicators.VIX.current_price} - low volatility/complacency`);
+      }
+    }
+
+    // Check tech vs broad market divergence
+    if (indicators.SPY && indicators.QQQ && !indicators.SPY.error && !indicators.QQQ.error) {
+      const divergence = indicators.QQQ.change_percent - indicators.SPY.change_percent;
+      if (Math.abs(divergence) > 0.5) {
+        if (divergence > 0) {
+          summary.key_observations.push(`Tech outperforming (QQQ +${divergence.toFixed(2)}% vs SPY)`);
+        } else {
+          summary.key_observations.push(`Tech underperforming (QQQ ${divergence.toFixed(2)}% vs SPY)`);
+        }
+      }
+    }
+
+    // Check dollar strength impact
+    if (indicators.UUP && !indicators.UUP.error) {
+      if (indicators.UUP.direction === 'UP' && indicators.UUP.strength !== 'WEAK') {
+        summary.key_observations.push('Strong dollar may pressure equities');
+      } else if (indicators.UUP.direction === 'DOWN' && indicators.UUP.strength !== 'WEAK') {
+        summary.key_observations.push('Weak dollar supportive for equities');
+      }
+    }
+
+    // Check bond market signals
+    if (indicators.TLT && !indicators.TLT.error) {
+      if (indicators.TLT.direction === 'UP' && indicators.TLT.strength === 'STRONG') {
+        summary.key_observations.push('Strong bond rally signals risk-off sentiment');
+      } else if (indicators.TLT.direction === 'DOWN' && indicators.TLT.strength === 'STRONG') {
+        summary.key_observations.push('Bond selloff may indicate rate concerns');
+      }
+    }
+
+    return summary;
+  }
 }

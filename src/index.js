@@ -572,6 +572,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           additionalProperties: false
         }
+      },
+      {
+        name: 'get_market_indicators',
+        description: 'Get comprehensive market indicators including SPY direction/strength, VIX level/trend, QQQ tech sector performance, dollar strength (UUP), and bond yields movement (TLT). Provides overall market sentiment, risk environment assessment, and key observations for trading context.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          additionalProperties: false
+        }
       }
     ]
   };
@@ -857,6 +866,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case 'get_market_indicators': {
+        const data = await client.getMarketIndicators();
+        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
       }
 
       default:
