@@ -70,6 +70,21 @@ export class MassiveOptionsClient {
         apiKey: apiKey
       }
     });
+
+    // Create separate clients for v2 and v1 endpoints
+    const baseUrlRoot = baseUrl.replace(/\/v\d+$/, ''); // Remove version suffix
+    this.clientV2 = axios.create({
+      baseURL: `${baseUrlRoot}/v2`,
+      params: {
+        apiKey: apiKey
+      }
+    });
+    this.clientV1 = axios.create({
+      baseURL: `${baseUrlRoot}/v1`,
+      params: {
+        apiKey: apiKey
+      }
+    });
   }
 
   async getOptionChain(symbol, expiration = null) {
@@ -86,6 +101,104 @@ export class MassiveOptionsClient {
       return response.data;
     } catch (error) {
       throw new Error(`Failed to get option chain: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get real-time stock quote
+   * @param {string} symbol - Stock ticker symbol
+   * @returns {Object} Stock quote with timestamp
+   */
+  async getStockQuote(symbol) {
+    try {
+      const fetchTimestamp = new Date().toISOString();
+
+      // Try v3 snapshot endpoint first (most comprehensive)
+      try {
+        const response = await this.client.get(`/snapshot`, {
+          params: {
+            ticker: symbol,
+            type: 'stocks'
+          }
+        });
+
+        if (response.data.results && response.data.results.length > 0) {
+          const result = response.data.results[0];
+
+          return {
+            timestamp: fetchTimestamp,
+            data_timestamp: result.last_quote?.last_updated
+              ? new Date(result.last_quote.last_updated / 1000000).toISOString()
+              : fetchTimestamp,
+
+            symbol: symbol,
+            price: result.last_trade?.price || result.last_quote?.ask_price || null,
+
+            quote: {
+              bid: result.last_quote?.bid_price,
+              ask: result.last_quote?.ask_price,
+              last: result.last_trade?.price,
+              bid_size: result.last_quote?.bid_size,
+              ask_size: result.last_quote?.ask_size
+            },
+
+            session: result.session ? {
+              open: result.session.open,
+              high: result.session.high,
+              low: result.session.low,
+              close: result.session.close,
+              volume: result.session.volume,
+              change: result.session.change,
+              change_percent: result.session.change_percent,
+              previous_close: result.session.previous_close
+            } : null,
+
+            market_status: result.market_status
+          };
+        }
+      } catch (snapshotError) {
+        console.error('Snapshot endpoint failed, trying previous close:', snapshotError.message);
+      }
+
+      // Fallback: Try previous close endpoint (use clientV2 for v2 endpoints)
+      const response = await this.clientV2.get(`/aggs/ticker/${symbol}/prev`);
+
+      if (response.data.results && response.data.results.length > 0) {
+        const result = response.data.results[0];
+
+        return {
+          timestamp: fetchTimestamp,
+          data_timestamp: new Date(result.t).toISOString(),
+
+          symbol: symbol,
+          price: result.c,
+
+          quote: {
+            last: result.c,
+            open: result.o,
+            high: result.h,
+            low: result.l,
+            close: result.c,
+            volume: result.v,
+            vwap: result.vw
+          },
+
+          session: {
+            open: result.o,
+            high: result.h,
+            low: result.l,
+            close: result.c,
+            volume: result.v,
+            previous_close: result.c
+          },
+
+          market_status: 'closed'
+        };
+      }
+
+      throw new Error('No stock data available');
+    } catch (error) {
+      throw new Error(`Failed to get stock quote: ${error.message}`);
     }
   }
 
@@ -121,14 +234,14 @@ export class MassiveOptionsClient {
       // Get underlying stock price
       let underlyingPrice = null;
       try {
-        const stockResponse = await this.client.get(`/v2/aggs/ticker/${symbol}/prev`);
+        const stockResponse = await this.clientV2.get(`/aggs/ticker/${symbol}/prev`);
         if (stockResponse.data.results && stockResponse.data.results.length > 0) {
           underlyingPrice = stockResponse.data.results[0].c; // closing price
         }
       } catch (stockError) {
         // Try alternative endpoint
         try {
-          const altResponse = await this.client.get(`/v3/quotes/${symbol}`);
+          const altResponse = await this.client.get(`/quotes/${symbol}`);
           if (altResponse.data.results && altResponse.data.results.length > 0) {
             underlyingPrice = altResponse.data.results[0].ask_price || altResponse.data.results[0].bid_price;
           }
@@ -139,21 +252,27 @@ export class MassiveOptionsClient {
       
       // Format the response to include all relevant quote and contract data
       return {
+        // Timestamp information
+        timestamp: new Date().toISOString(),
+        data_timestamp: quote.day?.last_updated
+          ? new Date(quote.day.last_updated / 1000000).toISOString()
+          : new Date().toISOString(),
+
         // Contract identification
         ticker: quote.details.ticker,
         underlying_ticker: symbol,
         contract_type: quote.details.contract_type,
-        
+
         // Contract specifications
         strike_price: quote.details.strike_price,
         expiration_date: quote.details.expiration_date,
         exercise_style: quote.details.exercise_style,
         shares_per_contract: quote.details.shares_per_contract,
-        
+
         // Exchange information
         primary_exchange: contractDetails.primary_exchange || 'N/A',
         cfi: contractDetails.cfi || 'N/A',
-        
+
         // Market data
         quote: {
           last: quote.day.close,
@@ -165,9 +284,23 @@ export class MassiveOptionsClient {
           change: quote.day.change,
           change_percent: quote.day.change_percent,
           previous_close: quote.day.previous_close,
-          last_updated: new Date(quote.day.last_updated / 1000000).toISOString()
+          last_updated: quote.day?.last_updated
+            ? new Date(quote.day.last_updated / 1000000).toISOString()
+            : null
         },
-        
+
+        // Latest bid/ask if available
+        last_quote: quote.last_quote ? {
+          bid_price: quote.last_quote.bid_price,
+          ask_price: quote.last_quote.ask_price,
+          mid_price: quote.last_quote.mid_price,
+          bid_size: quote.last_quote.bid_size,
+          ask_size: quote.last_quote.ask_size,
+          quote_timestamp: quote.last_quote.last_updated
+            ? new Date(quote.last_quote.last_updated / 1000000).toISOString()
+            : null
+        } : null,
+
         // Risk metrics
         greeks: {
           delta: quote.greeks?.delta || null,
@@ -177,10 +310,10 @@ export class MassiveOptionsClient {
           rho: quote.greeks?.rho || null
         },
         implied_volatility: quote.implied_volatility,
-        
+
         // Market interest
         open_interest: quote.open_interest,
-        
+
         // Additional info for analysis
         underlying_price: underlyingPrice,
         moneyness: calculateMoneyness(quote.details.contract_type, quote.details.strike_price, underlyingPrice),
@@ -1278,377 +1411,381 @@ export class MassiveOptionsClient {
     }
   }
 
-  /**
-   * Get Exponential Moving Average (EMA) for an option contract
-   * @param {Object} params - EMA parameters
-   * @returns {Object} EMA data with values and timestamps
-   */
-  async getOptionEMA(params) {
-    const {
-      symbol,
-      optionType,
-      strike,
-      expiration,
-      timespan = 'day', // day, hour, minute
-      window = 50, // EMA window (10, 20, 50, 200 common)
-      series_type = 'close', // close, open, high, low
-      limit = 10,
-      adjusted = true
-    } = params;
-
+  async getMarketIndicators() {
     try {
-      // Get the option ticker
-      const ticker = await this.getOptionTicker(symbol, optionType, strike, expiration);
+      console.error('Fetching market indicators...');
 
-      // Call the EMA endpoint
-      const response = await axios.get(`https://api.massive.com/v1/indicators/ema/${ticker}`, {
-        params: {
-          timespan,
-          adjusted: adjusted.toString(),
-          window,
-          series_type,
-          order: 'desc',
-          limit,
-          apiKey: this.apiKey
+      const symbols = {
+        SPY: 'S&P 500 ETF',
+        VIX: 'Volatility Index',
+        QQQ: 'Nasdaq-100 Tech ETF',
+        UUP: 'US Dollar Index ETF',
+        TLT: '20+ Year Treasury Bond ETF'
+      };
+
+      const indicators = {};
+
+      // Fetch data for each symbol
+      for (const [symbol, name] of Object.entries(symbols)) {
+        try {
+          // Get current quote
+          const quoteResponse = await this.client.get(`/v3/quotes/${symbol}`);
+
+          // Get previous day data
+          const prevResponse = await this.client.get(`/v2/aggs/ticker/${symbol}/prev`);
+
+          if (quoteResponse.data.results && quoteResponse.data.results.length > 0 &&
+              prevResponse.data.results && prevResponse.data.results.length > 0) {
+
+            const quote = quoteResponse.data.results[0];
+            const prev = prevResponse.data.results[0];
+
+            // Calculate current price (use last trade or average of bid/ask)
+            const currentPrice = quote.last_price || ((quote.ask_price + quote.bid_price) / 2);
+            const prevClose = prev.c;
+
+            // Calculate change
+            const change = currentPrice - prevClose;
+            const changePercent = (change / prevClose) * 100;
+
+            // Determine direction and strength
+            let direction, strength, trend;
+
+            if (changePercent > 0) {
+              direction = 'UP';
+              if (changePercent > 2) strength = 'STRONG';
+              else if (changePercent > 0.5) strength = 'MODERATE';
+              else strength = 'WEAK';
+            } else if (changePercent < 0) {
+              direction = 'DOWN';
+              if (changePercent < -2) strength = 'STRONG';
+              else if (changePercent < -0.5) strength = 'MODERATE';
+              else strength = 'WEAK';
+            } else {
+              direction = 'FLAT';
+              strength = 'NEUTRAL';
+            }
+
+            // Special handling for VIX (volatility interpretation)
+            if (symbol === 'VIX') {
+              if (currentPrice > 30) trend = 'HIGH FEAR - Market stress elevated';
+              else if (currentPrice > 20) trend = 'ELEVATED - Increased uncertainty';
+              else if (currentPrice < 15) trend = 'LOW - Complacency in markets';
+              else trend = 'NORMAL - Healthy volatility levels';
+            } else if (symbol === 'UUP') {
+              // Dollar interpretation
+              trend = direction === 'UP' ?
+                'Dollar strengthening - headwind for stocks/commodities' :
+                'Dollar weakening - tailwind for stocks/commodities';
+            } else if (symbol === 'TLT') {
+              // Bond interpretation (inverse to yields)
+              trend = direction === 'UP' ?
+                'Bonds rallying - yields falling, risk-off sentiment' :
+                'Bonds selling - yields rising, risk-on or inflation concerns';
+            } else {
+              // Stock ETF interpretation
+              trend = `${direction.toLowerCase()} ${strength.toLowerCase()}`;
+            }
+
+            indicators[symbol] = {
+              name: name,
+              current_price: parseFloat(currentPrice.toFixed(2)),
+              previous_close: parseFloat(prevClose.toFixed(2)),
+              change: parseFloat(change.toFixed(2)),
+              change_percent: parseFloat(changePercent.toFixed(2)),
+              direction: direction,
+              strength: strength,
+              trend: trend,
+              timestamp: new Date(quote.participant_timestamp / 1000000).toISOString()
+            };
+
+          }
+        } catch (symbolError) {
+          console.error(`Error fetching ${symbol}:`, symbolError.message);
+          indicators[symbol] = {
+            name: name,
+            error: `Failed to fetch data: ${symbolError.message}`
+          };
         }
-      });
-
-      if (!response.data.results || !response.data.results.values) {
-        throw new Error('No EMA data available for this option');
       }
 
-      return {
-        ticker: ticker,
-        underlying: symbol,
-        contract_type: optionType,
-        strike: strike,
-        expiration: expiration,
-        indicator: 'EMA',
-        parameters: {
-          window: window,
-          timespan: timespan,
-          series_type: series_type,
-          adjusted: adjusted
-        },
-        results: response.data.results.values.map(item => ({
-          timestamp: new Date(item.timestamp).toISOString(),
-          value: item.value
-        })),
-        next_url: response.data.next_url || null,
-        status: response.data.status
-      };
-
-    } catch (error) {
-      if (error.response?.status === 404) {
-        throw new Error('EMA data not available for this option contract. The option may be too illiquid or recently listed.');
-      }
-      throw new Error(`Failed to get option EMA: ${error.message}`);
-    }
-  }
-
-  /**
-   * Get Relative Strength Index (RSI) for an option contract
-   * @param {Object} params - RSI parameters
-   * @returns {Object} RSI data with values and timestamps
-   */
-  async getOptionRSI(params) {
-    const {
-      symbol,
-      optionType,
-      strike,
-      expiration,
-      timespan = 'day', // day, hour, minute
-      window = 14, // RSI window (typically 14)
-      series_type = 'close', // close, open, high, low
-      limit = 10,
-      adjusted = true
-    } = params;
-
-    try {
-      // Get the option ticker
-      const ticker = await this.getOptionTicker(symbol, optionType, strike, expiration);
-
-      // Call the RSI endpoint
-      const response = await axios.get(`https://api.massive.com/v1/indicators/rsi/${ticker}`, {
-        params: {
-          timespan,
-          adjusted: adjusted.toString(),
-          window,
-          series_type,
-          order: 'desc',
-          limit,
-          apiKey: this.apiKey
-        }
-      });
-
-      if (!response.data.results || !response.data.results.values) {
-        throw new Error('No RSI data available for this option');
-      }
-
-      const values = response.data.results.values.map(item => ({
-        timestamp: new Date(item.timestamp).toISOString(),
-        value: item.value
-      }));
-
-      // Analyze RSI levels
-      const latestRSI = values[0]?.value;
-      let signal = 'Neutral';
-      if (latestRSI >= 70) {
-        signal = 'Overbought - Consider selling or taking profits';
-      } else if (latestRSI <= 30) {
-        signal = 'Oversold - Potential buying opportunity';
-      }
-
-      return {
-        ticker: ticker,
-        underlying: symbol,
-        contract_type: optionType,
-        strike: strike,
-        expiration: expiration,
-        indicator: 'RSI',
-        parameters: {
-          window: window,
-          timespan: timespan,
-          series_type: series_type,
-          adjusted: adjusted
-        },
-        current_rsi: latestRSI,
-        signal: signal,
-        interpretation: {
-          overbought_threshold: 70,
-          oversold_threshold: 30,
-          current_status: latestRSI >= 70 ? 'Overbought' : latestRSI <= 30 ? 'Oversold' : 'Neutral'
-        },
-        results: values,
-        next_url: response.data.next_url || null,
-        status: response.data.status
-      };
-
-    } catch (error) {
-      if (error.response?.status === 404) {
-        throw new Error('RSI data not available for this option contract. The option may be too illiquid or recently listed.');
-      }
-      throw new Error(`Failed to get option RSI: ${error.message}`);
-    }
-  }
-
-  /**
-   * Get current market trading status
-   * @returns {Object} Current market status for all exchanges
-   */
-  async getMarketStatus() {
-    try {
-      const response = await axios.get('https://api.massive.com/v1/marketstatus/now', {
-        params: { apiKey: this.apiKey }
-      });
-
-      if (!response.data) {
-        throw new Error('No market status data available');
-      }
-
-      // Process market status for each exchange
-      const markets = response.data.exchanges || response.data;
-      const marketStatus = Array.isArray(markets) ? markets : [markets];
-
-      const summary = {
-        timestamp: new Date().toISOString(),
-        overall_status: marketStatus.every(m => m.market === 'open') ? 'Markets Open' : 'Markets Closed',
-        markets: marketStatus.map(exchange => ({
-          exchange: exchange.exchange || exchange.name || 'Unknown',
-          market: exchange.market || exchange.status,
-          server_time: exchange.serverTime ? new Date(exchange.serverTime).toISOString() : null,
-          local_open: exchange.local_open || null,
-          local_close: exchange.local_close || null,
-          currencies: exchange.currencies || null
-        })),
-        trading_allowed: marketStatus.some(m => m.market === 'open'),
-        after_hours: marketStatus.some(m => m.market === 'extended-hours'),
-        warnings: []
-      };
-
-      // Add warnings for closed markets
-      if (!summary.trading_allowed) {
-        summary.warnings.push('Markets are currently closed. Regular trading hours are 9:30 AM - 4:00 PM ET.');
-      }
-
-      if (summary.after_hours) {
-        summary.warnings.push('Extended hours trading is active. Liquidity may be limited.');
-      }
-
-      return summary;
-
-    } catch (error) {
-      throw new Error(`Failed to get market status: ${error.message}`);
-    }
-  }
-
-  /**
-   * Get upcoming market holidays and special hours
-   * @returns {Object} Upcoming market holidays and early close days
-   */
-  async getUpcomingMarketHolidays() {
-    try {
-      const response = await axios.get('https://api.massive.com/v1/marketstatus/upcoming', {
-        params: { apiKey: this.apiKey }
-      });
-
-      if (!response.data) {
-        throw new Error('No market holiday data available');
-      }
-
-      const holidays = Array.isArray(response.data) ? response.data : [response.data];
+      // Generate market summary
+      const summary = this.generateMarketSummary(indicators);
 
       return {
         timestamp: new Date().toISOString(),
-        total_events: holidays.length,
-        upcoming_events: holidays.map(event => ({
-          date: event.date,
-          exchange: event.exchange || 'NYSE',
-          name: event.name || event.holiday || 'Market Holiday',
-          status: event.status || event.market,
-          open: event.open || null,
-          close: event.close || null,
-          early_close: event.status === 'early-close' || (event.close && event.close !== '16:00'),
-          full_closure: event.status === 'closed' || event.market === 'closed',
-          notes: event.status === 'early-close' ? `Market closes early at ${event.close}` :
-                 event.status === 'closed' ? 'Market fully closed' : null
-        })),
-        next_full_closure: holidays.find(h => h.status === 'closed' || h.market === 'closed'),
-        next_early_close: holidays.find(h => h.status === 'early-close')
+        indicators: indicators,
+        market_summary: summary
       };
 
     } catch (error) {
-      throw new Error(`Failed to get upcoming market holidays: ${error.message}`);
+      throw new Error(`Failed to get market indicators: ${error.message}`);
     }
   }
 
+  generateMarketSummary(indicators) {
+    const summary = {
+      overall_sentiment: 'NEUTRAL',
+      risk_environment: 'NORMAL',
+      key_observations: []
+    };
+
+    // Check SPY direction
+    if (indicators.SPY && !indicators.SPY.error) {
+      if (indicators.SPY.direction === 'UP' && indicators.SPY.strength !== 'WEAK') {
+        summary.overall_sentiment = 'BULLISH';
+        summary.key_observations.push(`SPY trending ${indicators.SPY.direction.toLowerCase()} (${indicators.SPY.change_percent}%)`);
+      } else if (indicators.SPY.direction === 'DOWN' && indicators.SPY.strength !== 'WEAK') {
+        summary.overall_sentiment = 'BEARISH';
+        summary.key_observations.push(`SPY trending ${indicators.SPY.direction.toLowerCase()} (${indicators.SPY.change_percent}%)`);
+      }
+    }
+
+    // Check VIX level
+    if (indicators.VIX && !indicators.VIX.error) {
+      if (indicators.VIX.current_price > 25) {
+        summary.risk_environment = 'HIGH_FEAR';
+        summary.key_observations.push(`VIX elevated at ${indicators.VIX.current_price} - heightened volatility`);
+      } else if (indicators.VIX.current_price < 15) {
+        summary.risk_environment = 'COMPLACENT';
+        summary.key_observations.push(`VIX low at ${indicators.VIX.current_price} - low volatility/complacency`);
+      }
+    }
+
+    // Check tech vs broad market divergence
+    if (indicators.SPY && indicators.QQQ && !indicators.SPY.error && !indicators.QQQ.error) {
+      const divergence = indicators.QQQ.change_percent - indicators.SPY.change_percent;
+      if (Math.abs(divergence) > 0.5) {
+        if (divergence > 0) {
+          summary.key_observations.push(`Tech outperforming (QQQ +${divergence.toFixed(2)}% vs SPY)`);
+        } else {
+          summary.key_observations.push(`Tech underperforming (QQQ ${divergence.toFixed(2)}% vs SPY)`);
+        }
+      }
+    }
+
+    // Check dollar strength impact
+    if (indicators.UUP && !indicators.UUP.error) {
+      if (indicators.UUP.direction === 'UP' && indicators.UUP.strength !== 'WEAK') {
+        summary.key_observations.push('Strong dollar may pressure equities');
+      } else if (indicators.UUP.direction === 'DOWN' && indicators.UUP.strength !== 'WEAK') {
+        summary.key_observations.push('Weak dollar supportive for equities');
+      }
+    }
+
+    // Check bond market signals
+    if (indicators.TLT && !indicators.TLT.error) {
+      if (indicators.TLT.direction === 'UP' && indicators.TLT.strength === 'STRONG') {
+        summary.key_observations.push('Strong bond rally signals risk-off sentiment');
+      } else if (indicators.TLT.direction === 'DOWN' && indicators.TLT.strength === 'STRONG') {
+        summary.key_observations.push('Bond selloff may indicate rate concerns');
+      }
+    }
+
+    return summary;
+  }
+
+  // ========================================
+  // Real-Time Validation System Methods
+  // ========================================
+
   /**
-   * Get dividend information for a stock
-   * @param {Object} params - Dividend query parameters
-   * @returns {Object} Dividend data including upcoming and historical dividends
+   * Get real-time option snapshot (alias for getQuote with full data)
+   * Used by probability calculator and validators
    */
-  async getDividends(params = {}) {
-    const {
-      ticker = null,
-      ex_dividend_date = null, // Filter by ex-dividend date
-      record_date = null,
-      declaration_date = null,
-      pay_date = null,
-      frequency = null, // 0=one-time, 1=annual, 2=bi-annual, 4=quarterly, 12=monthly
-      cash_amount = null,
-      limit = 100,
-      sort = 'ex_dividend_date',
-      order = 'desc'
-    } = params;
+  async getOptionSnapshot(symbol, strike, expiration, optionType) {
+    return await this.getQuote(symbol, optionType, strike, expiration);
+  }
 
+  /**
+   * Get specific option snapshot by option contract ticker
+   * Example: O:AAPL250117C00150000
+   */
+  async getSpecificOptionSnapshot(symbol, optionContract) {
     try {
-      const queryParams = {
-        apiKey: this.apiKey,
-        limit,
-        sort,
-        order
-      };
-
-      // Add optional filters
-      if (ticker) queryParams.ticker = ticker;
-      if (ex_dividend_date) queryParams.ex_dividend_date = ex_dividend_date;
-      if (record_date) queryParams.record_date = record_date;
-      if (declaration_date) queryParams.declaration_date = declaration_date;
-      if (pay_date) queryParams.pay_date = pay_date;
-      if (frequency !== null) queryParams.frequency = frequency;
-      if (cash_amount !== null) queryParams.cash_amount = cash_amount;
-
-      const response = await axios.get('https://api.massive.com/v3/reference/dividends', {
-        params: queryParams
-      });
+      const fetchTimestamp = new Date().toISOString();
+      const response = await this.client.get(`/v3/snapshot/options/${symbol}/${optionContract}`);
 
       if (!response.data.results) {
-        return {
-          ticker: ticker || 'All',
-          total_results: 0,
-          dividends: [],
-          next_dividend: null
-        };
+        throw new Error('Option contract not found');
       }
 
-      const dividends = response.data.results.map(div => ({
-        ticker: div.ticker,
-        cash_amount: div.cash_amount,
-        currency: div.currency || 'USD',
-        declaration_date: div.declaration_date,
-        ex_dividend_date: div.ex_dividend_date,
-        pay_date: div.pay_date,
-        record_date: div.record_date,
-        frequency: div.frequency,
-        frequency_name: this.getDividendFrequencyName(div.frequency),
-        dividend_type: div.dividend_type,
-        days_until_ex_div: this.calculateDaysUntil(div.ex_dividend_date),
-        days_until_payment: this.calculateDaysUntil(div.pay_date)
-      }));
+      const results = response.data.results;
 
-      // Find next upcoming dividend for this ticker
-      const upcoming = dividends.filter(d =>
-        new Date(d.ex_dividend_date) > new Date()
-      ).sort((a, b) =>
-        new Date(a.ex_dividend_date) - new Date(b.ex_dividend_date)
-      );
-
-      const result = {
-        ticker: ticker || 'All',
-        total_results: dividends.length,
-        dividends: dividends,
-        next_dividend: upcoming.length > 0 ? upcoming[0] : null,
-        status: response.data.status,
-        request_id: response.data.request_id
+      // Add timestamp metadata
+      return {
+        ...results,
+        fetch_timestamp: fetchTimestamp,
+        data_timestamp: results.day?.last_updated
+          ? new Date(results.day.last_updated / 1000000).toISOString()
+          : fetchTimestamp,
+        data_age_seconds: results.day?.last_updated
+          ? (Date.now() - (results.day.last_updated / 1000000)) / 1000
+          : 0
       };
-
-      // Add options trading implications if we have an upcoming dividend
-      if (ticker && result.next_dividend && result.next_dividend.days_until_ex_div <= 30) {
-        result.options_implications = {
-          warning: 'Upcoming ex-dividend date affects option pricing',
-          ex_div_date: result.next_dividend.ex_dividend_date,
-          days_until: result.next_dividend.days_until_ex_div,
-          dividend_amount: result.next_dividend.cash_amount,
-          impact: {
-            call_options: 'May experience early assignment risk if deep ITM',
-            put_options: 'Intrinsic value increases by dividend amount on ex-div date',
-            strategy: result.next_dividend.days_until_ex_div <= 7 ?
-              'CRITICAL: Ex-div date within 7 days - high early assignment risk for ITM calls' :
-              'Monitor positions closely as ex-div date approaches'
-          }
-        };
-      }
-
-      return result;
-
     } catch (error) {
-      throw new Error(`Failed to get dividend data: ${error.message}`);
+      throw new Error(`Failed to get option snapshot: ${error.message}`);
     }
   }
 
   /**
-   * Helper method to get dividend frequency name
+   * Get intraday bars for underlying or option
+   * @param {string} symbol - Stock ticker
+   * @param {number} multiplier - Bar size (1, 5, 15, etc.)
+   * @param {string} timespan - 'minute', 'hour', 'day'
+   * @param {string} date - Date in YYYY-MM-DD format (default: today)
+   * @returns {Array} Array of OHLCV bars
    */
-  getDividendFrequencyName(frequency) {
-    const frequencies = {
-      0: 'One-Time',
-      1: 'Annual',
-      2: 'Semi-Annual',
-      4: 'Quarterly',
-      12: 'Monthly'
-    };
-    return frequencies[frequency] || 'Unknown';
+  async getIntradayBars(symbol, multiplier = 5, timespan = 'minute', date = null) {
+    try {
+      const fetchTimestamp = new Date().toISOString();
+      const targetDate = date || new Date().toISOString().split('T')[0];
+
+      const response = await this.clientV2.get(`/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/${targetDate}/${targetDate}`);
+
+      const results = response.data.results || [];
+
+      // Add timestamp to each bar
+      return results.map(bar => ({
+        ...bar,
+        bar_timestamp: new Date(bar.t).toISOString(),
+        fetch_timestamp: fetchTimestamp
+      }));
+    } catch (error) {
+      console.error(`Failed to get intraday bars: ${error.message}`);
+      return [];
+    }
   }
 
   /**
-   * Helper method to calculate days until a date
+   * Get historical bars for volatility calculations
+   * @param {string} symbol - Stock ticker
+   * @param {number} multiplier - Bar size
+   * @param {string} timespan - 'day', 'week', 'month'
+   * @param {string} from - Start date YYYY-MM-DD
+   * @param {string} to - End date YYYY-MM-DD
+   * @returns {Array} Array of OHLCV bars
    */
-  calculateDaysUntil(dateString) {
-    if (!dateString) return null;
-    const targetDate = new Date(dateString);
-    const today = new Date();
-    const diffTime = targetDate - today;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
+  async getHistoricalBars(symbol, multiplier, timespan, from, to) {
+    try {
+      const fetchTimestamp = new Date().toISOString();
+      const response = await this.clientV2.get(`/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/${from}/${to}`);
+
+      const results = response.data.results || [];
+
+      // Add timestamp to each bar
+      return results.map(bar => ({
+        ...bar,
+        bar_timestamp: new Date(bar.t).toISOString(),
+        fetch_timestamp: fetchTimestamp
+      }));
+    } catch (error) {
+      throw new Error(`Failed to get historical bars: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get RSI (Relative Strength Index) indicator
+   * @param {string} symbol - Stock ticker
+   * @param {number} window - RSI period (default 14)
+   * @returns {Object} RSI data with values array
+   */
+  async getRSI(symbol, window = 14) {
+    try {
+      const response = await this.clientV1.get(`/indicators/rsi/${symbol}`, {
+        params: {
+          timespan: 'day',
+          adjusted: true,
+          window: window,
+          series_type: 'close',
+          order: 'desc',
+          limit: 1
+        }
+      });
+
+      return response.data.results || null;
+    } catch (error) {
+      console.error(`Failed to get RSI: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Get SMA (Simple Moving Average) indicator
+   * @param {string} symbol - Stock ticker
+   * @param {number} window - SMA period (20, 50, 200, etc.)
+   * @returns {Object} SMA data with values array
+   */
+  async getSMA(symbol, window = 20) {
+    try {
+      const response = await this.clientV1.get(`/indicators/sma/${symbol}`, {
+        params: {
+          timespan: 'day',
+          adjusted: true,
+          window: window,
+          series_type: 'close',
+          order: 'desc',
+          limit: 1
+        }
+      });
+
+      return response.data.results || null;
+    } catch (error) {
+      console.error(`Failed to get SMA: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Get EMA (Exponential Moving Average) indicator
+   * @param {string} symbol - Stock ticker
+   * @param {number} window - EMA period
+   * @returns {Object} EMA data with values array
+   */
+  async getEMA(symbol, window = 20) {
+    try {
+      const response = await this.clientV1.get(`/indicators/ema/${symbol}`, {
+        params: {
+          timespan: 'day',
+          adjusted: true,
+          window: window,
+          series_type: 'close',
+          order: 'desc',
+          limit: 1
+        }
+      });
+
+      return response.data.results || null;
+    } catch (error) {
+      console.error(`Failed to get EMA: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Get MACD indicator
+   * @param {string} symbol - Stock ticker
+   * @returns {Object} MACD data
+   */
+  async getMACD(symbol) {
+    try {
+      const response = await this.clientV1.get(`/indicators/macd/${symbol}`, {
+        params: {
+          timespan: 'day',
+          adjusted: true,
+          short_window: 12,
+          long_window: 26,
+          signal_window: 9,
+          series_type: 'close',
+          order: 'desc',
+          limit: 1
+        }
+      });
+
+      return response.data.results || null;
+    } catch (error) {
+      console.error(`Failed to get MACD: ${error.message}`);
+      return null;
+    }
   }
 }

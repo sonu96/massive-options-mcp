@@ -17,6 +17,12 @@ import { runStressTest, runMonteCarloSimulation, STRESS_SCENARIOS } from './stre
 import { detectUnusualActivity, analyzePutCallFlow, analyzeFlowPersistence } from './flow-detector.js';
 import { analyzeOptionLiquidity, filterOptionsByLiquidity, assessMarketDepth } from './liquidity-filter.js';
 
+// Import new validation system modules
+import { OptionsProbabilityCalculator } from './probability-calculator.js';
+import { RealTimeOptionsMonitor } from './real-time-monitor.js';
+import { PreTradeValidator } from './pre-trade-validator.js';
+import { OptionsDecisionTree } from './decision-tree.js';
+
 dotenv.config();
 
 const server = new Server(
@@ -35,6 +41,12 @@ const client = new MassiveOptionsClient(
   process.env.MASSIVE_API_KEY,
   process.env.MASSIVE_API_BASE_URL
 );
+
+// Initialize validation system modules
+const probCalc = new OptionsProbabilityCalculator(client);
+const monitor = new RealTimeOptionsMonitor(client);
+const validator = new PreTradeValidator(client);
+const decisionTree = new OptionsDecisionTree(client);
 
 // Handle tool listing
 server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -574,110 +586,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         }
       },
       {
-        name: 'get_option_ema',
-        description: 'Get Exponential Moving Average (EMA) for an option contract. Useful for identifying trends and momentum in option prices. EMA reacts faster to price changes than simple moving averages. Common windows: 10 (short-term), 50 (medium-term), 200 (long-term).',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            symbol: {
-              type: 'string',
-              description: 'Stock ticker symbol in uppercase (e.g., "AAPL", "SPY")'
-            },
-            optionType: {
-              type: 'string',
-              enum: ['call', 'put'],
-              description: 'Option type: "call" or "put" (lowercase)'
-            },
-            strike: {
-              type: 'number',
-              description: 'Strike price as a number'
-            },
-            expiration: {
-              type: 'string',
-              pattern: '^\\d{4}-\\d{2}-\\d{2}$',
-              description: 'Expiration date in YYYY-MM-DD format'
-            },
-            timespan: {
-              type: 'string',
-              enum: ['day', 'hour', 'minute'],
-              description: 'Time interval for each bar (default: day)'
-            },
-            window: {
-              type: 'number',
-              description: 'EMA window size - number of periods (default: 50). Common values: 10, 20, 50, 200'
-            },
-            series_type: {
-              type: 'string',
-              enum: ['close', 'open', 'high', 'low'],
-              description: 'Price type to use for EMA calculation (default: close)'
-            },
-            limit: {
-              type: 'number',
-              description: 'Number of data points to return (default: 10, max: 5000)'
-            },
-            adjusted: {
-              type: 'boolean',
-              description: 'Whether to adjust for splits (default: true)'
-            }
-          },
-          required: ['symbol', 'optionType', 'strike', 'expiration'],
-          additionalProperties: false
-        }
-      },
-      {
-        name: 'get_option_rsi',
-        description: 'Get Relative Strength Index (RSI) for an option contract. RSI measures momentum and identifies overbought (>70) or oversold (<30) conditions. Useful for timing entries and exits. Default window is 14 periods.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            symbol: {
-              type: 'string',
-              description: 'Stock ticker symbol in uppercase (e.g., "AAPL", "SPY")'
-            },
-            optionType: {
-              type: 'string',
-              enum: ['call', 'put'],
-              description: 'Option type: "call" or "put" (lowercase)'
-            },
-            strike: {
-              type: 'number',
-              description: 'Strike price as a number'
-            },
-            expiration: {
-              type: 'string',
-              pattern: '^\\d{4}-\\d{2}-\\d{2}$',
-              description: 'Expiration date in YYYY-MM-DD format'
-            },
-            timespan: {
-              type: 'string',
-              enum: ['day', 'hour', 'minute'],
-              description: 'Time interval for each bar (default: day)'
-            },
-            window: {
-              type: 'number',
-              description: 'RSI window size - number of periods (default: 14). Typical: 14'
-            },
-            series_type: {
-              type: 'string',
-              enum: ['close', 'open', 'high', 'low'],
-              description: 'Price type to use for RSI calculation (default: close)'
-            },
-            limit: {
-              type: 'number',
-              description: 'Number of data points to return (default: 10, max: 5000)'
-            },
-            adjusted: {
-              type: 'boolean',
-              description: 'Whether to adjust for splits (default: true)'
-            }
-          },
-          required: ['symbol', 'optionType', 'strike', 'expiration'],
-          additionalProperties: false
-        }
-      },
-      {
-        name: 'get_market_status',
-        description: 'Get current market trading status for all exchanges. Shows whether markets are open, closed, or in extended hours. Use this before placing trades to ensure markets are open and trading is allowed.',
+        name: 'get_market_indicators',
+        description: 'Get comprehensive market indicators including SPY direction/strength, VIX level/trend, QQQ tech sector performance, dollar strength (UUP), and bond yields movement (TLT). Provides overall market sentiment, risk environment assessment, and key observations for trading context.',
         inputSchema: {
           type: 'object',
           properties: {},
@@ -685,39 +595,107 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         }
       },
       {
-        name: 'get_upcoming_market_holidays',
-        description: 'Get upcoming market holidays and early close days. Shows dates when markets will be fully closed or closing early. Important for planning trades around options expiration dates that fall on or near holidays.',
+        name: 'validate_option_trade',
+        description: 'CRITICAL PRE-TRADE VALIDATION: Comprehensive risk analysis before entering an options trade. Runs 9+ validation checks including probability of touch, ATR distance, IV analysis, market conditions, and liquidity. Returns APPROVED/REJECTED with detailed reasoning. USE THIS BEFORE EVERY TRADE to avoid losses like the ORCL example (would have prevented 75% prob of touch with 98% IV).',
         inputSchema: {
           type: 'object',
-          properties: {},
+          properties: {
+            symbol: {
+              type: 'string',
+              description: 'Underlying ticker symbol (e.g., "ORCL", "AAPL")'
+            },
+            strategy_type: {
+              type: 'string',
+              enum: ['iron_condor', 'strangle', 'straddle', 'call_credit_spread', 'put_credit_spread', 'call_debit_spread', 'put_debit_spread', 'covered_call', 'cash_secured_put'],
+              description: 'Type of options strategy'
+            },
+            strikes: {
+              type: 'object',
+              properties: {
+                short_call: { type: 'number', description: 'Short call strike price' },
+                short_put: { type: 'number', description: 'Short put strike price' },
+                long_call: { type: 'number', description: 'Long call strike price (for spreads)' },
+                long_put: { type: 'number', description: 'Long put strike price (for spreads)' }
+              },
+              description: 'Strike prices for the strategy'
+            },
+            expiration: {
+              type: 'string',
+              pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+              description: 'Expiration date in YYYY-MM-DD format'
+            }
+          },
+          required: ['symbol', 'strategy_type', 'strikes', 'expiration'],
           additionalProperties: false
         }
       },
       {
-        name: 'get_dividends',
-        description: 'Get dividend information for a stock. Returns upcoming and historical dividend data including ex-dividend dates, payment dates, and amounts. CRITICAL for options trading: dividends affect option pricing and create early assignment risk for ITM calls. If a dividend is upcoming within 30 days, returns options trading implications.',
+        name: 'calculate_option_probabilities',
+        description: 'Calculate Black-Scholes probabilities for an option position. Returns probability of touching strike, probability ITM/OTM, expected move, distance in ATR/stddev, IV vs HV comparison, and risk assessment. Essential for understanding true risk before trading.',
         inputSchema: {
           type: 'object',
           properties: {
-            ticker: {
+            symbol: {
               type: 'string',
-              description: 'Stock ticker symbol in uppercase (e.g., "AAPL"). If not provided, returns recent dividends for all stocks.'
+              description: 'Underlying ticker symbol'
             },
-            ex_dividend_date: {
+            strike: {
+              type: 'number',
+              description: 'Strike price to analyze'
+            },
+            expiration: {
               type: 'string',
               pattern: '^\\d{4}-\\d{2}-\\d{2}$',
-              description: 'Filter by specific ex-dividend date (YYYY-MM-DD)'
+              description: 'Expiration date in YYYY-MM-DD format'
             },
-            limit: {
-              type: 'number',
-              description: 'Number of dividend records to return (default: 100, max: 1000)'
-            },
-            frequency: {
-              type: 'number',
-              enum: [0, 1, 2, 4, 12],
-              description: 'Filter by dividend frequency: 0=one-time, 1=annual, 2=semi-annual, 4=quarterly, 12=monthly'
+            option_type: {
+              type: 'string',
+              enum: ['call', 'put'],
+              description: 'Option type: "call" or "put"'
             }
           },
+          required: ['symbol', 'strike', 'expiration', 'option_type'],
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'get_market_context',
+        description: 'Get comprehensive real-time market conditions for options trading. Includes underlying price/VWAP/intraday range, VIX level, SPY trend, technical indicators (RSI, SMA), and overall risk environment assessment. Use before making trading decisions.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            symbol: {
+              type: 'string',
+              description: 'Underlying ticker symbol to analyze'
+            }
+          },
+          required: ['symbol'],
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'evaluate_position_exit',
+        description: 'Real-time decision support for whether to hold or exit an existing position. Monitors price breaches, sustained moves, first touches, bounces, and profit targets. Returns EXIT_IMMEDIATE, MONITOR_CLOSELY, or HOLD with detailed reasoning and urgency level.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            symbol: {
+              type: 'string',
+              description: 'Underlying ticker symbol'
+            },
+            position: {
+              type: 'object',
+              properties: {
+                short_call: { type: 'number', description: 'Short call strike (if applicable)' },
+                short_put: { type: 'number', description: 'Short put strike (if applicable)' },
+                expiration: { type: 'string', description: 'Position expiration YYYY-MM-DD' },
+                entry_credit: { type: 'number', description: 'Credit received at entry' }
+              },
+              required: ['expiration'],
+              description: 'Current position details'
+            }
+          },
+          required: ['symbol', 'position'],
           additionalProperties: false
         }
       }
@@ -1007,29 +985,47 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
 
-      case 'get_option_ema': {
-        const result = await client.getOptionEMA(args);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      case 'get_market_indicators': {
+        const data = await client.getMarketIndicators();
+        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
       }
 
-      case 'get_option_rsi': {
-        const result = await client.getOptionRSI(args);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      case 'validate_option_trade': {
+        const validation = await validator.validateTrade(
+          args.symbol,
+          args.strategy_type,
+          args.strikes,
+          args.expiration
+        );
+        return { content: [{ type: 'text', text: JSON.stringify(validation, null, 2) }] };
       }
 
-      case 'get_market_status': {
-        const result = await client.getMarketStatus();
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      case 'calculate_option_probabilities': {
+        const probabilities = await probCalc.calculateProbabilities(
+          args.symbol,
+          args.strike,
+          args.expiration,
+          args.option_type
+        );
+        return { content: [{ type: 'text', text: JSON.stringify(probabilities, null, 2) }] };
       }
 
-      case 'get_upcoming_market_holidays': {
-        const result = await client.getUpcomingMarketHolidays();
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      case 'get_market_context': {
+        const context = await monitor.getCompleteMarketPicture(args.symbol);
+        return { content: [{ type: 'text', text: JSON.stringify(context, null, 2) }] };
       }
 
-      case 'get_dividends': {
-        const result = await client.getDividends(args);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      case 'evaluate_position_exit': {
+        // Get current price first
+        const quote = await client.getStockQuote(args.symbol);
+        const currentPrice = quote.price || quote.quote?.last || 0;
+
+        const exitDecision = await decisionTree.evaluateExit(
+          args.symbol,
+          args.position,
+          currentPrice
+        );
+        return { content: [{ type: 'text', text: JSON.stringify(exitDecision, null, 2) }] };
       }
 
       default:
