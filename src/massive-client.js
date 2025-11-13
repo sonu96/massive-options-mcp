@@ -1429,10 +1429,10 @@ export class MassiveOptionsClient {
       for (const [symbol, name] of Object.entries(symbols)) {
         try {
           // Get current quote
-          const quoteResponse = await this.client.get(`/v3/quotes/${symbol}`);
+          const quoteResponse = await this.client.get(`/quotes/${symbol}`);
 
           // Get previous day data
-          const prevResponse = await this.client.get(`/v2/aggs/ticker/${symbol}/prev`);
+          const prevResponse = await this.clientV2.get(`/aggs/ticker/${symbol}/prev`);
 
           if (quoteResponse.data.results && quoteResponse.data.results.length > 0 &&
               prevResponse.data.results && prevResponse.data.results.length > 0) {
@@ -1604,7 +1604,7 @@ export class MassiveOptionsClient {
   async getSpecificOptionSnapshot(symbol, optionContract) {
     try {
       const fetchTimestamp = new Date().toISOString();
-      const response = await this.client.get(`/v3/snapshot/options/${symbol}/${optionContract}`);
+      const response = await this.client.get(`/snapshot/options/${symbol}/${optionContract}`);
 
       if (!response.data.results) {
         throw new Error('Option contract not found');

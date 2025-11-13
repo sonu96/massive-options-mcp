@@ -95,7 +95,20 @@ export class OptionsDecisionTree {
     this.validator = new PreTradeValidator(massiveClient);
     this.probCalc = new OptionsProbabilityCalculator(massiveClient);
     this.monitor = new RealTimeOptionsMonitor(massiveClient);
-    this.priceHistory = new PriceHistory();
+    // Track price history per symbol to avoid mixing data across tickers
+    this.priceHistoryMap = new Map();
+  }
+
+  /**
+   * Get or create price history for a specific symbol
+   * @param {string} symbol - Stock ticker
+   * @returns {PriceHistory} Price history instance for this symbol
+   */
+  getPriceHistory(symbol) {
+    if (!this.priceHistoryMap.has(symbol)) {
+      this.priceHistoryMap.set(symbol, new PriceHistory());
+    }
+    return this.priceHistoryMap.get(symbol);
   }
 
   /**
@@ -252,8 +265,9 @@ export class OptionsDecisionTree {
    */
   async evaluateExit(symbol, position, currentPrice) {
     try {
-      // Track price history
-      this.priceHistory.addPrice(currentPrice);
+      // Track price history for this specific symbol
+      const priceHistory = this.getPriceHistory(symbol);
+      priceHistory.addPrice(currentPrice);
 
       // Get current probabilities
       const [callProb, putProb] = await Promise.all([
@@ -290,11 +304,11 @@ export class OptionsDecisionTree {
           name: 'Short Call - Sustained Above Strike',
           condition: () => {
             if (!position.short_call || currentPrice < position.short_call) return false;
-            const timeAtLevel = this.priceHistory.getTimeAtLevel(position.short_call, 1.0);
+            const timeAtLevel = priceHistory.getTimeAtLevel(position.short_call, 1.0);
             return timeAtLevel > 30; // More than 30 minutes above strike
           },
           decision: 'EXIT_IMMEDIATE',
-          reason: `Stock above short call for ${this.priceHistory.getTimeAtLevel(position.short_call).toFixed(0)} minutes - sustained breach`,
+          reason: `Stock above short call for ${priceHistory.getTimeAtLevel(position.short_call).toFixed(0)} minutes - sustained breach`,
           urgency: 'HIGH',
           confidence: 0.95
         },
@@ -302,11 +316,11 @@ export class OptionsDecisionTree {
           name: 'Short Put - Sustained Below Strike',
           condition: () => {
             if (!position.short_put || currentPrice > position.short_put) return false;
-            const timeAtLevel = this.priceHistory.getTimeAtLevel(position.short_put, 1.0);
+            const timeAtLevel = priceHistory.getTimeAtLevel(position.short_put, 1.0);
             return timeAtLevel > 30; // More than 30 minutes below strike
           },
           decision: 'EXIT_IMMEDIATE',
-          reason: `Stock below short put for ${this.priceHistory.getTimeAtLevel(position.short_put).toFixed(0)} minutes - sustained breach`,
+          reason: `Stock below short put for ${priceHistory.getTimeAtLevel(position.short_put).toFixed(0)} minutes - sustained breach`,
           urgency: 'HIGH',
           confidence: 0.95
         },
@@ -316,7 +330,7 @@ export class OptionsDecisionTree {
           name: 'Short Call - First Touch (Monitor)',
           condition: () => {
             if (!position.short_call) return false;
-            return this.priceHistory.isFirstTouch(position.short_call, 1.0);
+            return priceHistory.isFirstTouch(position.short_call, 1.0);
           },
           decision: 'MONITOR_CLOSELY',
           reason: 'First touch of short call - watch for bounce or sustained move',
@@ -328,7 +342,7 @@ export class OptionsDecisionTree {
           name: 'Short Put - First Touch (Monitor)',
           condition: () => {
             if (!position.short_put) return false;
-            return this.priceHistory.isFirstTouch(position.short_put, 1.0);
+            return priceHistory.isFirstTouch(position.short_put, 1.0);
           },
           decision: 'MONITOR_CLOSELY',
           reason: 'First touch of short put - watch for bounce or sustained move',
@@ -342,7 +356,7 @@ export class OptionsDecisionTree {
           name: 'Bounced Off Short Call',
           condition: () => {
             if (!position.short_call) return false;
-            return this.priceHistory.hasBouncedOff(position.short_call, 1.0);
+            return priceHistory.hasBouncedOff(position.short_call, 1.0);
           },
           decision: 'HOLD',
           reason: 'Price tested short call and bounced - technical level holding',
@@ -353,7 +367,7 @@ export class OptionsDecisionTree {
           name: 'Bounced Off Short Put',
           condition: () => {
             if (!position.short_put) return false;
-            return this.priceHistory.hasBouncedOff(position.short_put, 1.0);
+            return priceHistory.hasBouncedOff(position.short_put, 1.0);
           },
           decision: 'HOLD',
           reason: 'Price tested short put and bounced - technical level holding',
@@ -409,7 +423,7 @@ export class OptionsDecisionTree {
               call: callProb,
               put: putProb
             },
-            price_trend: this.priceHistory.getTrend(),
+            price_trend: priceHistory.getTrend(),
             timestamp: new Date().toISOString()
           };
         }
@@ -429,7 +443,7 @@ export class OptionsDecisionTree {
           call: callProb,
           put: putProb
         },
-        price_trend: this.priceHistory.getTrend(),
+        price_trend: priceHistory.getTrend(),
         timestamp: new Date().toISOString()
       };
     } catch (error) {
@@ -438,25 +452,33 @@ export class OptionsDecisionTree {
   }
 
   /**
-   * Reset price history (e.g., for new position)
+   * Reset price history for a specific symbol or all symbols
+   * @param {string} symbol - Optional: specific symbol to reset, or null to reset all
    */
-  resetPriceHistory() {
-    this.priceHistory = new PriceHistory();
+  resetPriceHistory(symbol = null) {
+    if (symbol) {
+      this.priceHistoryMap.delete(symbol);
+    } else {
+      this.priceHistoryMap.clear();
+    }
   }
 
   /**
-   * Get current price history summary
+   * Get current price history summary for a specific symbol
+   * @param {string} symbol - Stock ticker
    * @returns {Object} Price history summary
    */
-  getPriceHistorySummary() {
+  getPriceHistorySummary(symbol) {
+    const priceHistory = this.getPriceHistory(symbol);
     return {
-      points_tracked: this.priceHistory.history.length,
-      trend: this.priceHistory.getTrend(),
-      latest_price: this.priceHistory.history.length > 0
-        ? this.priceHistory.history[this.priceHistory.history.length - 1].price
+      symbol: symbol,
+      points_tracked: priceHistory.history.length,
+      trend: priceHistory.getTrend(),
+      latest_price: priceHistory.history.length > 0
+        ? priceHistory.history[priceHistory.history.length - 1].price
         : null,
-      oldest_price: this.priceHistory.history.length > 0
-        ? this.priceHistory.history[0].price
+      oldest_price: priceHistory.history.length > 0
+        ? priceHistory.history[0].price
         : null
     };
   }
