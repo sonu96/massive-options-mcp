@@ -128,16 +128,16 @@ export class RealTimeOptionsMonitor {
         optionSnapshot
       ] = await Promise.all([
         // Underlying stock snapshot
-        this.client.getQuote(symbol),
+        this.client.getStockQuote(symbol),
 
         // Intraday 5-minute bars for VWAP and range
         this.client.getIntradayBars(symbol, 5, 'minute', today).catch(() => []),
 
         // VIX for market volatility
-        this.client.getQuote('VIX').catch(() => null),
+        this.client.getStockQuote('VIX').catch(() => null),
 
         // SPY for market direction
-        this.client.getQuote('SPY').catch(() => null),
+        this.client.getStockQuote('SPY').catch(() => null),
 
         // Technical indicators
         this.client.getRSI(symbol, 14).catch(() => null),

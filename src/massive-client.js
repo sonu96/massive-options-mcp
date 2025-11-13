@@ -70,6 +70,21 @@ export class MassiveOptionsClient {
         apiKey: apiKey
       }
     });
+
+    // Create separate clients for v2 and v1 endpoints
+    const baseUrlRoot = baseUrl.replace(/\/v\d+$/, ''); // Remove version suffix
+    this.clientV2 = axios.create({
+      baseURL: `${baseUrlRoot}/v2`,
+      params: {
+        apiKey: apiKey
+      }
+    });
+    this.clientV1 = axios.create({
+      baseURL: `${baseUrlRoot}/v1`,
+      params: {
+        apiKey: apiKey
+      }
+    });
   }
 
   async getOptionChain(symbol, expiration = null) {
@@ -100,7 +115,7 @@ export class MassiveOptionsClient {
 
       // Try v3 snapshot endpoint first (most comprehensive)
       try {
-        const response = await this.client.get(`/v3/snapshot`, {
+        const response = await this.client.get(`/snapshot`, {
           params: {
             ticker: symbol,
             type: 'stocks'
@@ -145,8 +160,8 @@ export class MassiveOptionsClient {
         console.error('Snapshot endpoint failed, trying previous close:', snapshotError.message);
       }
 
-      // Fallback: Try previous close endpoint
-      const response = await this.client.get(`/v2/aggs/ticker/${symbol}/prev`);
+      // Fallback: Try previous close endpoint (use clientV2 for v2 endpoints)
+      const response = await this.clientV2.get(`/aggs/ticker/${symbol}/prev`);
 
       if (response.data.results && response.data.results.length > 0) {
         const result = response.data.results[0];
@@ -219,14 +234,14 @@ export class MassiveOptionsClient {
       // Get underlying stock price
       let underlyingPrice = null;
       try {
-        const stockResponse = await this.client.get(`/v2/aggs/ticker/${symbol}/prev`);
+        const stockResponse = await this.clientV2.get(`/aggs/ticker/${symbol}/prev`);
         if (stockResponse.data.results && stockResponse.data.results.length > 0) {
           underlyingPrice = stockResponse.data.results[0].c; // closing price
         }
       } catch (stockError) {
         // Try alternative endpoint
         try {
-          const altResponse = await this.client.get(`/v3/quotes/${symbol}`);
+          const altResponse = await this.client.get(`/quotes/${symbol}`);
           if (altResponse.data.results && altResponse.data.results.length > 0) {
             underlyingPrice = altResponse.data.results[0].ask_price || altResponse.data.results[0].bid_price;
           }
@@ -1626,7 +1641,7 @@ export class MassiveOptionsClient {
       const fetchTimestamp = new Date().toISOString();
       const targetDate = date || new Date().toISOString().split('T')[0];
 
-      const response = await this.client.get(`/v2/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/${targetDate}/${targetDate}`);
+      const response = await this.clientV2.get(`/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/${targetDate}/${targetDate}`);
 
       const results = response.data.results || [];
 
@@ -1654,7 +1669,7 @@ export class MassiveOptionsClient {
   async getHistoricalBars(symbol, multiplier, timespan, from, to) {
     try {
       const fetchTimestamp = new Date().toISOString();
-      const response = await this.client.get(`/v2/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/${from}/${to}`);
+      const response = await this.clientV2.get(`/aggs/ticker/${symbol}/range/${multiplier}/${timespan}/${from}/${to}`);
 
       const results = response.data.results || [];
 
@@ -1677,7 +1692,7 @@ export class MassiveOptionsClient {
    */
   async getRSI(symbol, window = 14) {
     try {
-      const response = await this.client.get(`/v1/indicators/rsi/${symbol}`, {
+      const response = await this.clientV1.get(`/indicators/rsi/${symbol}`, {
         params: {
           timespan: 'day',
           adjusted: true,
@@ -1703,7 +1718,7 @@ export class MassiveOptionsClient {
    */
   async getSMA(symbol, window = 20) {
     try {
-      const response = await this.client.get(`/v1/indicators/sma/${symbol}`, {
+      const response = await this.clientV1.get(`/indicators/sma/${symbol}`, {
         params: {
           timespan: 'day',
           adjusted: true,
@@ -1729,7 +1744,7 @@ export class MassiveOptionsClient {
    */
   async getEMA(symbol, window = 20) {
     try {
-      const response = await this.client.get(`/v1/indicators/ema/${symbol}`, {
+      const response = await this.clientV1.get(`/indicators/ema/${symbol}`, {
         params: {
           timespan: 'day',
           adjusted: true,
@@ -1754,7 +1769,7 @@ export class MassiveOptionsClient {
    */
   async getMACD(symbol) {
     try {
-      const response = await this.client.get(`/v1/indicators/macd/${symbol}`, {
+      const response = await this.clientV1.get(`/indicators/macd/${symbol}`, {
         params: {
           timespan: 'day',
           adjusted: true,

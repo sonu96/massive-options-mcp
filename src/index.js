@@ -1017,8 +1017,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'evaluate_position_exit': {
         // Get current price first
-        const quote = await client.getQuote(args.symbol);
-        const currentPrice = quote.price || quote.last?.price || 0;
+        const quote = await client.getStockQuote(args.symbol);
+        const currentPrice = quote.price || quote.quote?.last || 0;
 
         const exitDecision = await decisionTree.evaluateExit(
           args.symbol,
