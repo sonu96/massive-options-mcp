@@ -63,16 +63,25 @@ function calculateMoneyness(contractType, strikePrice, underlyingPrice) {
 export class MassiveOptionsClient {
   constructor(apiKey, baseUrl = 'https://api.massive.com/v3') {
     this.apiKey = apiKey;
-    this.baseUrl = baseUrl;
+
+    // Normalize baseUrl: strip trailing slash, ensure /v3 suffix
+    let normalizedUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash
+    if (!/\/v\d+$/.test(normalizedUrl)) {
+      // If no version suffix, append /v3
+      normalizedUrl = `${normalizedUrl}/v3`;
+    }
+    this.baseUrl = normalizedUrl;
+
+    // Create main client (v3)
     this.client = axios.create({
-      baseURL: baseUrl,
+      baseURL: normalizedUrl,
       params: {
         apiKey: apiKey
       }
     });
 
     // Create separate clients for v2 and v1 endpoints
-    const baseUrlRoot = baseUrl.replace(/\/v\d+$/, ''); // Remove version suffix
+    const baseUrlRoot = normalizedUrl.replace(/\/v\d+$/, ''); // Remove version suffix
     this.clientV2 = axios.create({
       baseURL: `${baseUrlRoot}/v2`,
       params: {
@@ -231,22 +240,22 @@ export class MassiveOptionsClient {
         console.error('Could not fetch additional contract details:', refError.message);
       }
       
-      // Get underlying stock price
+      // Get underlying stock price - use real-time data first, fallback to previous close
       let underlyingPrice = null;
       try {
-        const stockResponse = await this.clientV2.get(`/aggs/ticker/${symbol}/prev`);
-        if (stockResponse.data.results && stockResponse.data.results.length > 0) {
-          underlyingPrice = stockResponse.data.results[0].c; // closing price
-        }
+        const stockQuote = await this.getStockQuote(symbol);
+        underlyingPrice = stockQuote.price;
       } catch (stockError) {
-        // Try alternative endpoint
+        console.error('Real-time quote failed, trying previous close:', stockError.message);
+        // Fallback to previous close to ensure we always have a price
         try {
-          const altResponse = await this.client.get(`/quotes/${symbol}`);
-          if (altResponse.data.results && altResponse.data.results.length > 0) {
-            underlyingPrice = altResponse.data.results[0].ask_price || altResponse.data.results[0].bid_price;
+          const prevResponse = await this.clientV2.get(`/aggs/ticker/${symbol}/prev`);
+          if (prevResponse.data.results && prevResponse.data.results.length > 0) {
+            underlyingPrice = prevResponse.data.results[0].c;
+            console.error('Successfully fetched previous close as fallback');
           }
-        } catch (e) {
-          console.error('Could not fetch underlying price:', e.message);
+        } catch (prevError) {
+          console.error('Previous close fallback also failed:', prevError.message);
         }
       }
       
@@ -328,11 +337,9 @@ export class MassiveOptionsClient {
     try {
       // First, get the option ticker
       const ticker = await this.getOptionTicker(symbol, optionType, strike, expiration);
-      
+
       // Get aggregates with custom timespan (v2 endpoint)
-      const response = await axios.get(`https://api.massive.com/v2/aggs/ticker/${ticker}/range/${multiplier}/${timespan}/${from}/${to}`, {
-        params: { apiKey: this.apiKey }
-      });
+      const response = await this.clientV2.get(`/aggs/ticker/${ticker}/range/${multiplier}/${timespan}/${from}/${to}`);
       
       return {
         ticker: ticker,
@@ -355,11 +362,9 @@ export class MassiveOptionsClient {
     try {
       // Get the option ticker
       const ticker = await this.getOptionTicker(symbol, optionType, strike, expiration);
-      
+
       // Get previous day's OHLC (v2 endpoint)
-      const response = await axios.get(`https://api.massive.com/v2/aggs/ticker/${ticker}/prev`, {
-        params: { apiKey: this.apiKey }
-      });
+      const response = await this.clientV2.get(`/aggs/ticker/${ticker}/prev`);
       
       if (!response.data.results || response.data.results.length === 0) {
         throw new Error('No previous day data available');
@@ -391,11 +396,9 @@ export class MassiveOptionsClient {
     try {
       // Get the option ticker
       const ticker = await this.getOptionTicker(symbol, optionType, strike, expiration);
-      
+
       // Get open-close data for specific date (v1 endpoint)
-      const response = await axios.get(`https://api.massive.com/v1/open-close/${ticker}/${date}`, {
-        params: { apiKey: this.apiKey }
-      });
+      const response = await this.clientV1.get(`/open-close/${ticker}/${date}`);
       
       if (response.data.status === 'NOT_FOUND') {
         throw new Error(`No data available for ${date}. This endpoint may not support options or the contract may not have traded on this date.`);
@@ -516,11 +519,9 @@ export class MassiveOptionsClient {
     try {
       // Get the option ticker
       const ticker = await this.getOptionTicker(symbol, optionType, strike, expiration);
-      
+
       // Get last trade data (v2 endpoint)
-      const response = await axios.get(`https://api.massive.com/v2/last/trade/${ticker}`, {
-        params: { apiKey: this.apiKey }
-      });
+      const response = await this.clientV2.get(`/last/trade/${ticker}`);
       
       if (!response.data || !response.data.results) {
         throw new Error('No last trade data available');
@@ -600,9 +601,7 @@ export class MassiveOptionsClient {
       // Get underlying asset data
       let underlyingData = null;
       try {
-        const stockResponse = await axios.get(`https://api.massive.com/v2/aggs/ticker/${symbol}/prev`, {
-          params: { apiKey: this.apiKey }
-        });
+        const stockResponse = await this.clientV2.get(`/aggs/ticker/${symbol}/prev`);
         if (stockResponse.data.results && stockResponse.data.results.length > 0) {
           underlyingData = stockResponse.data.results[0];
         }
@@ -1425,24 +1424,20 @@ export class MassiveOptionsClient {
 
       const indicators = {};
 
-      // Fetch data for each symbol
+      // Fetch data for each symbol using getStockQuote (handles fallbacks)
       for (const [symbol, name] of Object.entries(symbols)) {
         try {
-          // Get current quote
-          const quoteResponse = await this.client.get(`/quotes/${symbol}`);
+          // Use getStockQuote which tries real-time first, then falls back to prev
+          const stockQuote = await this.getStockQuote(symbol);
 
-          // Get previous day data
-          const prevResponse = await this.clientV2.get(`/aggs/ticker/${symbol}/prev`);
+          if (stockQuote && stockQuote.price && stockQuote.session) {
+            const currentPrice = stockQuote.price;
+            const prevClose = stockQuote.session.previous_close;
 
-          if (quoteResponse.data.results && quoteResponse.data.results.length > 0 &&
-              prevResponse.data.results && prevResponse.data.results.length > 0) {
-
-            const quote = quoteResponse.data.results[0];
-            const prev = prevResponse.data.results[0];
-
-            // Calculate current price (use last trade or average of bid/ask)
-            const currentPrice = quote.last_price || ((quote.ask_price + quote.bid_price) / 2);
-            const prevClose = prev.c;
+            // If no session data available, skip this symbol
+            if (!prevClose) {
+              throw new Error('No session data available');
+            }
 
             // Calculate change
             const change = currentPrice - prevClose;
@@ -1496,9 +1491,12 @@ export class MassiveOptionsClient {
               direction: direction,
               strength: strength,
               trend: trend,
-              timestamp: new Date(quote.participant_timestamp / 1000000).toISOString()
+              data_timestamp: stockQuote.data_timestamp,
+              market_status: stockQuote.market_status || 'unknown',
+              is_real_time: stockQuote.market_status !== 'closed'
             };
-
+          } else {
+            throw new Error('Invalid stock quote data structure');
           }
         } catch (symbolError) {
           console.error(`Error fetching ${symbol}:`, symbolError.message);
@@ -1600,27 +1598,31 @@ export class MassiveOptionsClient {
   /**
    * Get specific option snapshot by option contract ticker
    * Example: O:AAPL250117C00150000
+   * @param {string} symbol - Underlying ticker (used for context only)
+   * @param {string} optionContract - Option contract ticker (e.g., O:AAPL250117C00150000)
    */
   async getSpecificOptionSnapshot(symbol, optionContract) {
     try {
       const fetchTimestamp = new Date().toISOString();
-      const response = await this.client.get(`/snapshot/options/${symbol}/${optionContract}`);
 
-      if (!response.data.results) {
+      // Use /quotes/{contractTicker} endpoint for specific option contracts
+      const response = await this.client.get(`/quotes/${optionContract}`);
+
+      if (!response.data.results || response.data.results.length === 0) {
         throw new Error('Option contract not found');
       }
 
-      const results = response.data.results;
+      const results = response.data.results[0];
 
       // Add timestamp metadata
       return {
         ...results,
         fetch_timestamp: fetchTimestamp,
-        data_timestamp: results.day?.last_updated
-          ? new Date(results.day.last_updated / 1000000).toISOString()
+        data_timestamp: results.last_quote?.last_updated
+          ? new Date(results.last_quote.last_updated / 1000000).toISOString()
           : fetchTimestamp,
-        data_age_seconds: results.day?.last_updated
-          ? (Date.now() - (results.day.last_updated / 1000000)) / 1000
+        data_age_seconds: results.last_quote?.last_updated
+          ? (Date.now() - (results.last_quote.last_updated / 1000000)) / 1000
           : 0
       };
     } catch (error) {

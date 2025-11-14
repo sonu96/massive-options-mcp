@@ -167,9 +167,9 @@ export class RealTimeOptionsMonitor {
         // Underlying asset data
         underlying: {
           price: currentPrice,
-          change: underlyingSnapshot?.change || 0,
-          change_percent: underlyingSnapshot?.change_percent || 0,
-          volume: underlyingSnapshot?.volume || 0,
+          change: underlyingSnapshot?.session?.change || 0,
+          change_percent: underlyingSnapshot?.session?.change_percent || 0,
+          volume: underlyingSnapshot?.session?.volume || 0,
 
           // Intraday data
           intraday: {
@@ -206,9 +206,9 @@ export class RealTimeOptionsMonitor {
                 : 'HIGH',
 
           spy_price: spyData?.price || 0,
-          spy_change: spyData?.change || 0,
-          spy_change_percent: spyData?.change_percent || 0,
-          spy_volume: spyData?.volume || 0,
+          spy_change: spyData?.session?.change || 0,
+          spy_change_percent: spyData?.session?.change_percent || 0,
+          spy_volume: spyData?.session?.volume || 0,
 
           market_strength: marketStrength,
           market_status: underlyingSnapshot?.market_status || 'unknown',

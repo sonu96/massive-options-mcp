@@ -148,7 +148,7 @@ export function calculateTimeDecay(strategy, days = 7, contracts = 1) {
 
   // Calculate net theta (how much strategy gains/loses per day)
   const netTheta = strategy.legs.reduce((sum, leg) => {
-    const theta = leg.delta || 0; // Using delta as proxy if theta not available
+    const theta = leg.theta || 0; // Use actual theta value, fallback to 0 if missing
     if (leg.action === 'buy') {
       return sum + theta;
     } else {

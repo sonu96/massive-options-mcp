@@ -74,12 +74,14 @@ export const STRESS_SCENARIOS = {
  * @param {object} portfolioGreeks - Portfolio Greeks from calculatePortfolioGreeks
  * @param {Array} scenarios - Array of scenario names or custom scenarios
  * @param {object} config - Additional configuration
+ * @param {number} config.underlying_price - Current underlying price (required for accurate delta P&L)
  * @returns {object} Stress test results
  */
 export function runStressTest(portfolioGreeks, scenarios = null, config = {}) {
   const {
     include_custom_scenarios = true,
-    sort_by = 'pnl' // Sort by P&L (worst first)
+    sort_by = 'pnl', // Sort by P&L (worst first)
+    underlying_price = 100 // Default to $100 if not provided
   } = config;
 
   // Use predefined scenarios if none provided
@@ -97,7 +99,7 @@ export function runStressTest(portfolioGreeks, scenarios = null, config = {}) {
       price_move_pct: scenario.price_move_pct,
       iv_change_pts: scenario.iv_change_pts,
       days_forward: scenario.days_forward
-    });
+    }, underlying_price);
 
     results.push({
       scenario: scenario.name || scenarioKey,
@@ -279,6 +281,7 @@ export function createCustomScenario(name, parameters = {}) {
  * Run Monte Carlo simulation (simplified)
  * @param {object} portfolioGreeks - Portfolio Greeks
  * @param {object} config - Monte Carlo configuration
+ * @param {number} config.underlying_price - Current underlying price (required for accurate delta P&L)
  * @returns {object} Simulation results
  */
 export function runMonteCarloSimulation(portfolioGreeks, config = {}) {
@@ -286,7 +289,8 @@ export function runMonteCarloSimulation(portfolioGreeks, config = {}) {
     num_simulations = 1000,
     days_forward = 30,
     daily_volatility = 0.01, // 1% daily vol
-    iv_volatility = 2 // 2% daily IV change
+    iv_volatility = 2, // 2% daily IV change
+    underlying_price = 100 // Default to $100 if not provided
   } = config;
 
   const results = [];
@@ -307,7 +311,7 @@ export function runMonteCarloSimulation(portfolioGreeks, config = {}) {
       price_move_pct: cumulativeMove,
       iv_change_pts: cumulativeIVChange,
       days_forward
-    });
+    }, underlying_price);
 
     results.push(pnl.total_estimated_pnl);
   }

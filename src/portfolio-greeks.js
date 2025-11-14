@@ -254,9 +254,10 @@ function generateInterpretation(greeks) {
  * Calculate expected P&L from various market scenarios
  * @param {object} portfolioGreeks - Portfolio Greeks from calculatePortfolioGreeks
  * @param {object} scenarios - Market scenarios to test
+ * @param {number} underlying_price - Current underlying price (required for accurate delta P&L)
  * @returns {object} P&L for each scenario
  */
-export function calculateScenarioPnL(portfolioGreeks, scenarios = {}) {
+export function calculateScenarioPnL(portfolioGreeks, scenarios = {}, underlying_price = 100) {
   const {
     price_move_pct = 0, // % move in underlying (e.g., 0.05 = 5% up)
     iv_change_pts = 0, // Change in IV in percentage points (e.g., 10 = +10%)
@@ -269,10 +270,14 @@ export function calculateScenarioPnL(portfolioGreeks, scenarios = {}) {
   // This is an approximation
 
   // Delta P&L (first-order)
-  const deltaPnL = net_delta * price_move_pct;
+  // net_delta is dollar-delta per $1 move, so we need to multiply by the dollar move
+  // Dollar move = percentage move * underlying price (e.g., 5% of $100 = $5)
+  const dollar_move = price_move_pct * underlying_price;
+  const deltaPnL = net_delta * dollar_move;
 
   // Gamma P&L (second-order, approximation)
-  const gammaPnL = 0.5 * net_gamma * (price_move_pct ** 2) * 100;
+  // Gamma is also per dollar move, so we use dollar_move here too
+  const gammaPnL = 0.5 * net_gamma * (dollar_move ** 2);
 
   // Theta P&L
   const thetaPnL = net_theta * days_forward;

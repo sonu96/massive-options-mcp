@@ -485,7 +485,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'stress_test_portfolio',
-        description: 'Run stress tests on portfolio to estimate P&L under various market scenarios (crash, volatility spike, sideways grind, etc.). Shows worst-case and best-case scenarios with recommendations. Includes Monte Carlo simulation for Value-at-Risk (VaR) calculations.',
+        description: 'Run stress tests on portfolio to estimate P&L under various market scenarios (crash, volatility spike, sideways grind, etc.). Shows worst-case and best-case scenarios with recommendations. Includes Monte Carlo simulation for Value-at-Risk (VaR) calculations. IMPORTANT: Must provide underlying_price for accurate delta P&L calculations.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -498,6 +498,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 net_vega: { type: 'number' }
               },
               description: 'Portfolio Greeks from get_portfolio_greeks'
+            },
+            underlying_price: {
+              type: 'number',
+              description: 'Current price of the underlying stock (e.g., 450.25 for SPY). Required for accurate delta P&L in stress scenarios. Without this, delta risk will be severely understated.'
             },
             scenarios: {
               type: 'array',
@@ -517,7 +521,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               }
             }
           },
-          required: ['portfolio_greeks'],
+          required: ['portfolio_greeks', 'underlying_price'],
           additionalProperties: false
         }
       },
@@ -929,15 +933,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const stressTestResult = runStressTest(
           args.portfolio_greeks,
           args.scenarios || null,
-          {}
+          {
+            underlying_price: args.underlying_price
+          }
         );
 
         let result = { stress_test: stressTestResult };
 
         if (args.run_monte_carlo) {
+          const monteCarloConfig = {
+            ...(args.monte_carlo_config || {}),
+            underlying_price: args.underlying_price
+          };
           const monteCarloResult = runMonteCarloSimulation(
             args.portfolio_greeks,
-            args.monte_carlo_config || {}
+            monteCarloConfig
           );
           result.monte_carlo = monteCarloResult;
         }
