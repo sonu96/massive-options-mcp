@@ -1838,6 +1838,7 @@ export class MassiveOptionsClient {
       const errors = [];
       const cacheHits = [];
       const cacheMisses = [];
+      const dataTimestamps = []; // Track source timestamps for metadata
 
       // Parallel fetch with concurrency limit (10 at a time to avoid rate limits)
       const batchSize = 10;
@@ -1847,25 +1848,46 @@ export class MassiveOptionsClient {
         const batchPromises = batch.map(async (symbol) => {
           try {
             // Check cache first
-            let chainData = getCachedChain(symbol);
+            let cacheResult = getCachedChain(symbol);
 
-            if (chainData) {
+            if (cacheResult) {
               cacheHits.push(symbol);
-              return { symbol, data: chainData, cached: true };
+              return {
+                symbol,
+                data: cacheResult.data,
+                cached: true,
+                fetched_at: cacheResult.timestamp,
+                source_timestamp: cacheResult.source_timestamp,
+                source_time_iso: cacheResult.source_time_iso,
+                cache_age_seconds: cacheResult.age_seconds
+              };
             }
 
             // Cache miss - fetch from API using snapshot endpoint
             cacheMisses.push(symbol);
 
             // Fetch from /snapshot/options/{symbol} for market data (not /reference)
+            const fetchTime = Date.now();
             const response = await this.client.get(`/snapshot/options/${symbol}`, {
               params: { limit: 250 }
             });
 
             if (response.data && response.data.results && response.data.results.length > 0) {
-              // Cache the raw snapshot results (includes volume, Greeks, IV, quotes, etc.)
-              setCachedChain(symbol, response.data.results);
-              return { symbol, data: response.data.results, cached: false };
+              // Extract source timestamp from API response (nanosecond timestamp from first contract)
+              const sourceTimestamp = response.data.results[0]?.last_quote?.last_updated
+                || response.data.results[0]?.underlying_asset?.last_updated
+                || response.data.results[0]?.day?.last_updated
+                || null;
+
+              // Cache the raw snapshot results with both timestamps
+              setCachedChain(symbol, response.data.results, fetchTime, sourceTimestamp);
+              return {
+                symbol,
+                data: response.data.results,
+                cached: false,
+                fetched_at: fetchTime,
+                source_timestamp: sourceTimestamp
+              };
             }
 
             return null;
@@ -1881,6 +1903,17 @@ export class MassiveOptionsClient {
         batchResults.forEach(result => {
           if (result && result.data) {
             allOptions.push(...result.data);
+
+            // Track timestamp metadata
+            if (result.source_timestamp || result.source_time_iso) {
+              dataTimestamps.push({
+                symbol: result.symbol,
+                fetched_at: new Date(result.fetched_at).toISOString(),
+                source_timestamp: result.source_time_iso || null,
+                data_source: result.cached ? 'cache' : 'api',
+                cache_age_seconds: result.cache_age_seconds || 0
+              });
+            }
           }
         });
       }
@@ -1914,6 +1947,22 @@ export class MassiveOptionsClient {
       // Format output
       const formatted = formatScreenerOutput(ranked, limit);
 
+      // Calculate data freshness summary
+      const now = Date.now();
+      const oldestSourceTime = dataTimestamps.reduce((oldest, ts) => {
+        if (!ts.source_timestamp) return oldest;
+        const time = new Date(ts.source_timestamp).getTime();
+        return !oldest || time < oldest ? time : oldest;
+      }, null);
+
+      const dataFreshness = {
+        query_time: new Date(now).toISOString(),
+        oldest_source_data: oldestSourceTime ? new Date(oldestSourceTime).toISOString() : null,
+        oldest_data_age_seconds: oldestSourceTime ? Math.floor((now - oldestSourceTime) / 1000) : null,
+        symbols_from_cache: cacheHits.length,
+        symbols_from_api: cacheMisses.length
+      };
+
       return {
         success: true,
         matches: formatted,
@@ -1923,6 +1972,8 @@ export class MassiveOptionsClient {
         symbols_screened: symbols.length,
         cache_hits: cacheHits.length,
         cache_misses: cacheMisses.length,
+        data_freshness: dataFreshness,
+        data_timestamps: dataTimestamps.length > 0 ? dataTimestamps : undefined,
         errors: errors.length > 0 ? errors : undefined,
         execution_time_ms: Date.now() - startTime,
         criteria

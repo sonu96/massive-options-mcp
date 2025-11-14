@@ -58,6 +58,7 @@ function cleanCache() {
 
 /**
  * Get cached option chain or return null if expired/missing
+ * Returns { data, timestamp, age_ms } if found, null otherwise
  */
 export function getCachedChain(symbol) {
   cleanCache();
@@ -70,16 +71,36 @@ export function getCachedChain(symbol) {
     return null;
   }
 
-  return cached.data;
+  // Convert source timestamp from nanoseconds to milliseconds if present
+  const sourceTimeMs = cached.source_timestamp
+    ? Math.floor(cached.source_timestamp / 1000000)
+    : null;
+
+  return {
+    data: cached.data,
+    timestamp: cached.timestamp,
+    source_timestamp: cached.source_timestamp,
+    source_time_iso: sourceTimeMs ? new Date(sourceTimeMs).toISOString() : null,
+    age_ms: age,
+    age_seconds: Math.floor(age / 1000),
+    cached_at: new Date(cached.timestamp).toISOString(),
+    data_source: 'cache'
+  };
 }
 
 /**
- * Cache option chain data
+ * Cache option chain data with timestamps
+ * @param {string} symbol - Symbol being cached
+ * @param {Array} data - Option chain data
+ * @param {number} fetchTime - When we fetched from API (ms timestamp)
+ * @param {number} sourceTimestamp - When source generated data (nanosecond timestamp from API)
  */
-export function setCachedChain(symbol, data) {
+export function setCachedChain(symbol, data, fetchTime = Date.now(), sourceTimestamp = null) {
   optionChainCache.set(symbol, {
     data,
-    timestamp: Date.now()
+    timestamp: fetchTime,
+    source_timestamp: sourceTimestamp,
+    cached_at: new Date(fetchTime).toISOString()
   });
 }
 
