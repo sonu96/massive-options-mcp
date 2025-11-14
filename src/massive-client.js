@@ -1790,4 +1790,205 @@ export class MassiveOptionsClient {
       return null;
     }
   }
+
+  /**
+   * Screen options across multiple symbols based on criteria
+   *
+   * @param {Object} criteria - Screening criteria
+   * @param {Array<string>} criteria.symbols - Symbols to screen (optional, uses defaults if not provided)
+   * @param {number} criteria.min_volume - Minimum daily volume
+   * @param {number} criteria.max_volume - Maximum daily volume
+   * @param {number} criteria.min_open_interest - Minimum open interest
+   * @param {number} criteria.min_delta - Minimum delta (absolute value)
+   * @param {number} criteria.max_delta - Maximum delta (absolute value)
+   * @param {number} criteria.min_iv - Minimum implied volatility
+   * @param {number} criteria.max_iv - Maximum implied volatility
+   * @param {number} criteria.min_price - Minimum option price
+   * @param {number} criteria.max_price - Maximum option price
+   * @param {string} criteria.option_type - 'call', 'put', or 'both'
+   * @param {number} criteria.min_days_to_expiration - Minimum DTE
+   * @param {number} criteria.max_days_to_expiration - Maximum DTE
+   * @param {string} criteria.moneyness - 'ITM', 'ATM', 'OTM', or 'all'
+   * @param {string} criteria.liquidity_quality - 'EXCELLENT', 'GOOD', 'FAIR'
+   * @param {string} criteria.sort_by - Sort by: 'volume', 'iv', 'delta', 'price', 'liquidity_score', 'open_interest'
+   * @param {number} criteria.limit - Maximum results to return (default 50, max 200)
+   * @returns {Object} Screener results with matches and metadata
+   */
+  async screenOptions(criteria = {}) {
+    // Import screener functions (lazy import to avoid circular dependencies)
+    const {
+      getSymbolsList,
+      getCachedChain,
+      setCachedChain,
+      applyScreenerFilters,
+      rankScreenerResults,
+      formatScreenerOutput
+    } = await import('./options-screener.js');
+
+    const startTime = Date.now();
+    const limit = Math.min(criteria.limit || 50, 200);
+
+    try {
+      // Get symbols to screen
+      const symbols = getSymbolsList(criteria.symbols);
+      console.error(`Screening ${symbols.length} symbols...`);
+
+      // Fetch option chains for all symbols (with caching and parallel requests)
+      const allOptions = [];
+      const errors = [];
+      const cacheHits = [];
+      const cacheMisses = [];
+      const dataTimestamps = []; // Track source timestamps for metadata
+
+      // Parallel fetch with concurrency limit (10 at a time to avoid rate limits)
+      const batchSize = 10;
+      for (let i = 0; i < symbols.length; i += batchSize) {
+        const batch = symbols.slice(i, i + batchSize);
+
+        const batchPromises = batch.map(async (symbol) => {
+          try {
+            // Check cache first
+            let cacheResult = getCachedChain(symbol);
+
+            if (cacheResult) {
+              cacheHits.push(symbol);
+              return {
+                symbol,
+                data: cacheResult.data,
+                cached: true,
+                fetched_at: cacheResult.timestamp,
+                source_timestamp: cacheResult.source_timestamp,
+                source_time_iso: cacheResult.source_time_iso,
+                cache_age_seconds: cacheResult.age_seconds
+              };
+            }
+
+            // Cache miss - fetch from API using snapshot endpoint
+            cacheMisses.push(symbol);
+
+            // Fetch from /snapshot/options/{symbol} for market data (not /reference)
+            const fetchTime = Date.now();
+            const response = await this.client.get(`/snapshot/options/${symbol}`, {
+              params: { limit: 250 }
+            });
+
+            if (response.data && response.data.results && response.data.results.length > 0) {
+              // Extract source timestamp from API response (nanosecond timestamp from first contract)
+              const sourceTimestamp = response.data.results[0]?.last_quote?.last_updated
+                || response.data.results[0]?.underlying_asset?.last_updated
+                || response.data.results[0]?.day?.last_updated
+                || null;
+
+              // Cache the raw snapshot results with both timestamps
+              setCachedChain(symbol, response.data.results, fetchTime, sourceTimestamp);
+              return {
+                symbol,
+                data: response.data.results,
+                cached: false,
+                fetched_at: fetchTime,
+                source_timestamp: sourceTimestamp
+              };
+            }
+
+            return null;
+          } catch (error) {
+            errors.push({ symbol, error: error.message });
+            return null;
+          }
+        });
+
+        const batchResults = await Promise.all(batchPromises);
+
+        // Collect options from successful fetches
+        batchResults.forEach(result => {
+          if (result && result.data) {
+            allOptions.push(...result.data);
+
+            // Track timestamp metadata
+            if (result.source_timestamp || result.source_time_iso) {
+              dataTimestamps.push({
+                symbol: result.symbol,
+                fetched_at: new Date(result.fetched_at).toISOString(),
+                source_timestamp: result.source_time_iso || null,
+                data_source: result.cached ? 'cache' : 'api',
+                cache_age_seconds: result.cache_age_seconds || 0
+              });
+            }
+          }
+        });
+      }
+
+      console.error(`Fetched ${allOptions.length} total options from ${symbols.length} symbols`);
+      console.error(`Cache: ${cacheHits.length} hits, ${cacheMisses.length} misses`);
+
+      if (allOptions.length === 0) {
+        return {
+          success: true,
+          matches: [],
+          total_screened: 0,
+          total_matched: 0,
+          symbols_screened: symbols.length,
+          cache_hits: cacheHits.length,
+          cache_misses: cacheMisses.length,
+          errors: errors.length > 0 ? errors : undefined,
+          execution_time_ms: Date.now() - startTime,
+          criteria
+        };
+      }
+
+      // Apply filters
+      const filtered = applyScreenerFilters(allOptions, criteria);
+      console.error(`Filtered to ${filtered.length} matches`);
+
+      // Rank results
+      const sortBy = criteria.sort_by || 'volume';
+      const ranked = rankScreenerResults(filtered, sortBy);
+
+      // Format output
+      const formatted = formatScreenerOutput(ranked, limit);
+
+      // Calculate data freshness summary
+      const now = Date.now();
+      const oldestSourceTime = dataTimestamps.reduce((oldest, ts) => {
+        if (!ts.source_timestamp) return oldest;
+        const time = new Date(ts.source_timestamp).getTime();
+        return !oldest || time < oldest ? time : oldest;
+      }, null);
+
+      const dataFreshness = {
+        query_time: new Date(now).toISOString(),
+        oldest_source_data: oldestSourceTime ? new Date(oldestSourceTime).toISOString() : null,
+        oldest_data_age_seconds: oldestSourceTime ? Math.floor((now - oldestSourceTime) / 1000) : null,
+        symbols_from_cache: cacheHits.length,
+        symbols_from_api: cacheMisses.length
+      };
+
+      return {
+        success: true,
+        matches: formatted,
+        total_screened: allOptions.length,
+        total_matched: filtered.length,
+        returned: formatted.length,
+        symbols_screened: symbols.length,
+        cache_hits: cacheHits.length,
+        cache_misses: cacheMisses.length,
+        data_freshness: dataFreshness,
+        data_timestamps: dataTimestamps.length > 0 ? dataTimestamps : undefined,
+        errors: errors.length > 0 ? errors : undefined,
+        execution_time_ms: Date.now() - startTime,
+        criteria
+      };
+
+    } catch (error) {
+      console.error(`Screener error: ${error.message}`);
+      return {
+        success: false,
+        error: error.message,
+        matches: [],
+        total_screened: 0,
+        total_matched: 0,
+        execution_time_ms: Date.now() - startTime
+      };
+    }
+  }
 }

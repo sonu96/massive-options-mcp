@@ -256,7 +256,15 @@ export function calculateFullAnalytics(optionData, stockPrice) {
   } = optionData;
   
   // Calculate days to expiration
-  const dte = Math.max(0, Math.floor((new Date(expiration) - new Date()) / (1000 * 60 * 60 * 24)));
+  // Use Math.ceil so partial days count as a full trading day
+  // For date-only expirations (YYYY-MM-DD), treat as end-of-day
+  const expirationDate = new Date(expiration);
+  if (typeof expiration === 'string' && !expiration.includes('T')) {
+    // Date-only format - set to end of day (market close)
+    expirationDate.setUTCHours(23, 59, 59, 999);
+  }
+  const millisecondsPerDay = 1000 * 60 * 60 * 24;
+  const dte = Math.max(0, Math.ceil((expirationDate - new Date()) / millisecondsPerDay));
   
   // Current option price
   const optionPrice = quote?.last || 0;
@@ -267,9 +275,15 @@ export function calculateFullAnalytics(optionData, stockPrice) {
   const breakeven = calculateBreakeven(type, strike, optionPrice);
   
   // Advanced calculations
-  const probabilityITM = calculateProbabilityITM({
+  let probabilityITM = calculateProbabilityITM({
     type, strike, stockPrice, volatility: iv || 0.3, dte
   });
+
+  // Clamp probability to avoid misleading 1.0 or 0.0 values for live contracts
+  // Options with time remaining always have some uncertainty
+  if (dte > 0) {
+    probabilityITM = Math.min(0.9999, Math.max(0.0001, probabilityITM));
+  }
   
   const expectedMove = calculateExpectedMove(stockPrice, iv || 0.3, dte);
   const leverage = calculateLeverage(greeks?.delta || 0, stockPrice, optionPrice);
