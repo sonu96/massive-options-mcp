@@ -45,7 +45,7 @@ describe('Analytics Integration', () => {
       
       // Verify probability is reasonable for ITM option
       expect(analytics.probabilityITM).toBeGreaterThan(0.5);
-      expect(analytics.probabilityITM).toBeLessThanOrEqual(1);
+      expect(analytics.probabilityITM).toBeLessThan(1); // Should never be exactly 1.0 for live contracts
       
       // Verify leverage calculation
       expect(analytics.leverage).toBeCloseTo(9.4, 1);  // 0.65 * 65 / 4.50
@@ -137,9 +137,7 @@ describe('Analytics Integration', () => {
       expect(analytics.timeValue).toBe(0.10);     // 15.10 - 15
       expect(analytics.moneynessDetail).toBe('Deep ITM');
       expect(analytics.probabilityITM).toBeGreaterThan(0.95);  // Very high probability
-      // DTE can be 1 or 2 depending on time of day test runs (Math.floor rounds down)
-      expect(analytics.dte).toBeGreaterThanOrEqual(1);
-      expect(analytics.dte).toBeLessThanOrEqual(2);
+      expect(analytics.dte).toBe(2); // Math.ceil on 2 days future = 2 days
       
       // Low leverage for deep ITM
       expect(analytics.leverage).toBeLessThan(5);
