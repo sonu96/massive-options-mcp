@@ -1831,7 +1831,7 @@ export class MassiveOptionsClient {
     try {
       // Get symbols to screen
       const symbols = getSymbolsList(criteria.symbols);
-      console.log(`Screening ${symbols.length} symbols...`);
+      console.error(`Screening ${symbols.length} symbols...`);
 
       // Fetch option chains for all symbols (with caching and parallel requests)
       const allOptions = [];
@@ -1854,14 +1854,18 @@ export class MassiveOptionsClient {
               return { symbol, data: chainData, cached: true };
             }
 
-            // Cache miss - fetch from API
+            // Cache miss - fetch from API using snapshot endpoint
             cacheMisses.push(symbol);
-            chainData = await this.getOptionChain(symbol);
 
-            if (chainData && chainData.results && chainData.results.length > 0) {
-              // Cache the results
-              setCachedChain(symbol, chainData.results);
-              return { symbol, data: chainData.results, cached: false };
+            // Fetch from /snapshot/options/{symbol} for market data (not /reference)
+            const response = await this.client.get(`/snapshot/options/${symbol}`, {
+              params: { limit: 250 }
+            });
+
+            if (response.data && response.data.results && response.data.results.length > 0) {
+              // Cache the raw snapshot results (includes volume, Greeks, IV, quotes, etc.)
+              setCachedChain(symbol, response.data.results);
+              return { symbol, data: response.data.results, cached: false };
             }
 
             return null;
@@ -1881,8 +1885,8 @@ export class MassiveOptionsClient {
         });
       }
 
-      console.log(`Fetched ${allOptions.length} total options from ${symbols.length} symbols`);
-      console.log(`Cache: ${cacheHits.length} hits, ${cacheMisses.length} misses`);
+      console.error(`Fetched ${allOptions.length} total options from ${symbols.length} symbols`);
+      console.error(`Cache: ${cacheHits.length} hits, ${cacheMisses.length} misses`);
 
       if (allOptions.length === 0) {
         return {
@@ -1901,7 +1905,7 @@ export class MassiveOptionsClient {
 
       // Apply filters
       const filtered = applyScreenerFilters(allOptions, criteria);
-      console.log(`Filtered to ${filtered.length} matches`);
+      console.error(`Filtered to ${filtered.length} matches`);
 
       // Rank results
       const sortBy = criteria.sort_by || 'volume';

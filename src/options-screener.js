@@ -293,10 +293,21 @@ export function formatScreenerOutput(options, limit = 50) {
     const underlyingPrice = option.underlying_asset?.price;
     const moneyness = underlyingPrice ? getMoneynessCategory(option, underlyingPrice) : 'unknown';
 
+    // Extract underlying symbol properly from option ticker
+    // Format: O:AAPL251219C00250000 -> AAPL
+    // Strip "O:" prefix, then extract symbol before date (YYMMDD)
+    let underlyingSymbol = option.underlying_asset?.ticker;
+    if (!underlyingSymbol && option.ticker) {
+      const cleanTicker = option.ticker.replace(/^O:/, ''); // Remove O: prefix
+      // Match everything before the 6-digit date (YYMMDD) followed by C/P
+      const match = cleanTicker.match(/^([A-Z]+)(\d{6})[CP]/);
+      underlyingSymbol = match ? match[1] : cleanTicker;
+    }
+
     return {
       // Basic Info
       ticker: option.ticker,
-      underlying_symbol: option.underlying_asset?.ticker || option.ticker?.split(':')[1]?.slice(0, -15),
+      underlying_symbol: underlyingSymbol,
       contract_type: option.details?.contract_type,
       strike: option.details?.strike_price,
       expiration: expirationDate,
