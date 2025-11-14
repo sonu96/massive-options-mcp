@@ -1790,4 +1790,150 @@ export class MassiveOptionsClient {
       return null;
     }
   }
+
+  /**
+   * Screen options across multiple symbols based on criteria
+   *
+   * @param {Object} criteria - Screening criteria
+   * @param {Array<string>} criteria.symbols - Symbols to screen (optional, uses defaults if not provided)
+   * @param {number} criteria.min_volume - Minimum daily volume
+   * @param {number} criteria.max_volume - Maximum daily volume
+   * @param {number} criteria.min_open_interest - Minimum open interest
+   * @param {number} criteria.min_delta - Minimum delta (absolute value)
+   * @param {number} criteria.max_delta - Maximum delta (absolute value)
+   * @param {number} criteria.min_iv - Minimum implied volatility
+   * @param {number} criteria.max_iv - Maximum implied volatility
+   * @param {number} criteria.min_price - Minimum option price
+   * @param {number} criteria.max_price - Maximum option price
+   * @param {string} criteria.option_type - 'call', 'put', or 'both'
+   * @param {number} criteria.min_days_to_expiration - Minimum DTE
+   * @param {number} criteria.max_days_to_expiration - Maximum DTE
+   * @param {string} criteria.moneyness - 'ITM', 'ATM', 'OTM', or 'all'
+   * @param {string} criteria.liquidity_quality - 'EXCELLENT', 'GOOD', 'FAIR'
+   * @param {string} criteria.sort_by - Sort by: 'volume', 'iv', 'delta', 'price', 'liquidity_score', 'open_interest'
+   * @param {number} criteria.limit - Maximum results to return (default 50, max 200)
+   * @returns {Object} Screener results with matches and metadata
+   */
+  async screenOptions(criteria = {}) {
+    // Import screener functions (lazy import to avoid circular dependencies)
+    const {
+      getSymbolsList,
+      getCachedChain,
+      setCachedChain,
+      applyScreenerFilters,
+      rankScreenerResults,
+      formatScreenerOutput
+    } = await import('./options-screener.js');
+
+    const startTime = Date.now();
+    const limit = Math.min(criteria.limit || 50, 200);
+
+    try {
+      // Get symbols to screen
+      const symbols = getSymbolsList(criteria.symbols);
+      console.log(`Screening ${symbols.length} symbols...`);
+
+      // Fetch option chains for all symbols (with caching and parallel requests)
+      const allOptions = [];
+      const errors = [];
+      const cacheHits = [];
+      const cacheMisses = [];
+
+      // Parallel fetch with concurrency limit (10 at a time to avoid rate limits)
+      const batchSize = 10;
+      for (let i = 0; i < symbols.length; i += batchSize) {
+        const batch = symbols.slice(i, i + batchSize);
+
+        const batchPromises = batch.map(async (symbol) => {
+          try {
+            // Check cache first
+            let chainData = getCachedChain(symbol);
+
+            if (chainData) {
+              cacheHits.push(symbol);
+              return { symbol, data: chainData, cached: true };
+            }
+
+            // Cache miss - fetch from API
+            cacheMisses.push(symbol);
+            chainData = await this.getOptionChain(symbol);
+
+            if (chainData && chainData.results && chainData.results.length > 0) {
+              // Cache the results
+              setCachedChain(symbol, chainData.results);
+              return { symbol, data: chainData.results, cached: false };
+            }
+
+            return null;
+          } catch (error) {
+            errors.push({ symbol, error: error.message });
+            return null;
+          }
+        });
+
+        const batchResults = await Promise.all(batchPromises);
+
+        // Collect options from successful fetches
+        batchResults.forEach(result => {
+          if (result && result.data) {
+            allOptions.push(...result.data);
+          }
+        });
+      }
+
+      console.log(`Fetched ${allOptions.length} total options from ${symbols.length} symbols`);
+      console.log(`Cache: ${cacheHits.length} hits, ${cacheMisses.length} misses`);
+
+      if (allOptions.length === 0) {
+        return {
+          success: true,
+          matches: [],
+          total_screened: 0,
+          total_matched: 0,
+          symbols_screened: symbols.length,
+          cache_hits: cacheHits.length,
+          cache_misses: cacheMisses.length,
+          errors: errors.length > 0 ? errors : undefined,
+          execution_time_ms: Date.now() - startTime,
+          criteria
+        };
+      }
+
+      // Apply filters
+      const filtered = applyScreenerFilters(allOptions, criteria);
+      console.log(`Filtered to ${filtered.length} matches`);
+
+      // Rank results
+      const sortBy = criteria.sort_by || 'volume';
+      const ranked = rankScreenerResults(filtered, sortBy);
+
+      // Format output
+      const formatted = formatScreenerOutput(ranked, limit);
+
+      return {
+        success: true,
+        matches: formatted,
+        total_screened: allOptions.length,
+        total_matched: filtered.length,
+        returned: formatted.length,
+        symbols_screened: symbols.length,
+        cache_hits: cacheHits.length,
+        cache_misses: cacheMisses.length,
+        errors: errors.length > 0 ? errors : undefined,
+        execution_time_ms: Date.now() - startTime,
+        criteria
+      };
+
+    } catch (error) {
+      console.error(`Screener error: ${error.message}`);
+      return {
+        success: false,
+        error: error.message,
+        matches: [],
+        total_screened: 0,
+        total_matched: 0,
+        execution_time_ms: Date.now() - startTime
+      };
+    }
+  }
 }

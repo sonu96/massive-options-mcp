@@ -702,6 +702,126 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ['symbol', 'position'],
           additionalProperties: false
         }
+      },
+      {
+        name: 'screen_options',
+        description: 'Screen and discover options across multiple symbols based on criteria like volume, delta, IV, liquidity, price, and days to expiration. Returns ranked list of options matching the criteria. Perfect for finding trading opportunities like "high IV calls for selling" or "liquid OTM puts with 30-45 DTE". Screens 70+ popular tickers by default or use custom symbol list.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            symbols: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Optional: Array of ticker symbols to screen. If not provided, screens 70+ popular symbols (SPY, QQQ, AAPL, TSLA, NVDA, etc.)'
+            },
+            min_volume: {
+              type: 'number',
+              description: 'Minimum daily volume (e.g., 100 for liquid options)'
+            },
+            max_volume: {
+              type: 'number',
+              description: 'Maximum daily volume'
+            },
+            min_open_interest: {
+              type: 'number',
+              description: 'Minimum open interest (e.g., 500 for institutional interest)'
+            },
+            min_delta: {
+              type: 'number',
+              description: 'Minimum delta in absolute value (e.g., 0.30 for ~70% probability ITM). Works for both calls and puts.'
+            },
+            max_delta: {
+              type: 'number',
+              description: 'Maximum delta in absolute value (e.g., 0.40 for probability range). Works for both calls and puts.'
+            },
+            min_iv: {
+              type: 'number',
+              description: 'Minimum implied volatility as decimal (e.g., 0.30 for 30% IV, good for premium selling)'
+            },
+            max_iv: {
+              type: 'number',
+              description: 'Maximum implied volatility as decimal (e.g., 0.60 for 60% IV, avoid extreme volatility)'
+            },
+            min_price: {
+              type: 'number',
+              description: 'Minimum option price/premium (e.g., 0.50 for $50 minimum)'
+            },
+            max_price: {
+              type: 'number',
+              description: 'Maximum option price/premium (e.g., 5.00 to avoid expensive options)'
+            },
+            option_type: {
+              type: 'string',
+              enum: ['call', 'put', 'both'],
+              description: 'Filter by option type: "call", "put", or "both" (default: both)'
+            },
+            min_days_to_expiration: {
+              type: 'number',
+              description: 'Minimum days to expiration (e.g., 30 for at least 1 month out)'
+            },
+            max_days_to_expiration: {
+              type: 'number',
+              description: 'Maximum days to expiration (e.g., 45 for 30-45 DTE range)'
+            },
+            moneyness: {
+              type: 'string',
+              enum: ['ITM', 'ATM', 'OTM', 'all'],
+              description: 'Filter by moneyness: "ITM" (in the money), "ATM" (at the money), "OTM" (out of the money), or "all" (default: all)'
+            },
+            liquidity_quality: {
+              type: 'string',
+              enum: ['EXCELLENT', 'GOOD', 'FAIR'],
+              description: 'Minimum liquidity quality. EXCELLENT: tight spreads + high volume. GOOD: decent spreads. FAIR: tradable but wider spreads.'
+            },
+            sort_by: {
+              type: 'string',
+              enum: ['volume', 'open_interest', 'iv', 'delta', 'price', 'liquidity_score'],
+              description: 'Sort results by: "volume" (default), "open_interest", "iv" (implied volatility), "delta", "price", or "liquidity_score"'
+            },
+            limit: {
+              type: 'number',
+              description: 'Maximum number of results to return (default: 50, max: 200)'
+            }
+          },
+          additionalProperties: false,
+          examples: [
+            {
+              description: 'Find covered call candidates: OTM calls, 30-45 DTE, delta 0.25-0.40, high volume',
+              option_type: 'call',
+              moneyness: 'OTM',
+              min_delta: 0.25,
+              max_delta: 0.40,
+              min_days_to_expiration: 30,
+              max_days_to_expiration: 45,
+              min_volume: 50,
+              liquidity_quality: 'GOOD',
+              sort_by: 'iv',
+              limit: 20
+            },
+            {
+              description: 'Find high IV options for selling premium: IV > 40%, good liquidity, 21-45 DTE',
+              min_iv: 0.40,
+              min_days_to_expiration: 21,
+              max_days_to_expiration: 45,
+              min_open_interest: 500,
+              liquidity_quality: 'GOOD',
+              sort_by: 'iv',
+              limit: 30
+            },
+            {
+              description: 'Find cheap OTM puts for hedging: delta -0.10 to -0.20, price < $1, 30-60 DTE',
+              option_type: 'put',
+              moneyness: 'OTM',
+              min_delta: 0.10,
+              max_delta: 0.20,
+              max_price: 1.00,
+              min_days_to_expiration: 30,
+              max_days_to_expiration: 60,
+              min_volume: 100,
+              limit: 25
+            }
+          ]
+        }
       }
     ]
   };
@@ -1036,6 +1156,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           currentPrice
         );
         return { content: [{ type: 'text', text: JSON.stringify(exitDecision, null, 2) }] };
+      }
+
+      case 'screen_options': {
+        const screenerResults = await client.screenOptions(args);
+        return { content: [{ type: 'text', text: JSON.stringify(screenerResults, null, 2) }] };
       }
 
       default:
